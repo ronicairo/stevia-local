@@ -1,0 +1,105 @@
+// SCSS pour la disposition du formulaire
+form {
+  display: flex;
+  flex-direction: column;
+
+  .inline-buttons {
+    order: 1;
+  }
+
+  span.required {
+    color: darkred;
+  }
+
+  .form-column {
+    display: flex;
+    gap: 1em;
+
+    .check-padding {
+      flex: 1;
+      padding: .5em;
+    }
+
+    .form-row {
+      flex: 1;
+
+      &.form-only-one {
+        flex: 0 0 49.5%;
+      }
+    }
+
+    .inputCurrency input {
+      text-align: end;
+    }
+  }
+
+  .form-control {
+    &[type]:not([type='checkbox']) {
+      width: 100%;
+      padding: .5em 1em;
+      min-width: 10em;
+    }
+
+    &.form-choice-grid {
+      display: grid;
+      grid-template-columns: repeat(8, auto);
+      gap: 1em;
+    }
+  }
+
+  .form-label {
+    margin-bottom: 5px;
+  }
+
+  .form-errors {
+    li {
+      list-style: none;
+    }
+  }
+
+  .form-spinner {
+    height: 1.5em;
+    width: 1.5em;
+  }
+
+  .input-group {
+    input {
+      width: unset !important;
+    }
+  }
+}
+
+.file-box {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
+
+  &.in-column {
+    flex-direction: column;
+    gap: unset;
+  }
+}
+
+#seuils_delais_workflows_liste_wf {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 1em 1.5em;
+  gap: .5em;
+
+  .form-check {
+    display: flex;
+    min-height: unset;
+    margin-bottom: unset;
+    flex: 0 0 15%;
+    gap: .5em;
+    align-items: center;
+  }
+}
+#form-pilotage-stat .form-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(6, auto) !important;
+  gap: 1em;
+}

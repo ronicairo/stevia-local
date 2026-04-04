@@ -1,0 +1,77 @@
+monolog:
+    channels:
+        - deprecation
+        - stevia
+        - stevia_entrainement
+
+when@dev:
+    monolog:
+        handlers:
+            main:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+                channels: ["!event", "!stevia", "!stevia_entrainement"]
+            console:
+                type: console
+                process_psr_3_messages: false
+                channels: ["!event", "!doctrine", "!console", "!stevia", "!stevia_entrainement"]
+            stevia:
+                type: stream
+                path: "%kernel.logs_dir%/stevia.log"
+                level: info
+                channels: [stevia]
+            stevia_entrainement:
+                type: stream
+                path: "%kernel.logs_dir%/stevia-entrainement.log"
+                level: info
+                channels: [stevia_entrainement]
+
+when@test:
+    monolog:
+        handlers:
+            main:
+                type: fingers_crossed
+                action_level: error
+                handler: nested
+                excluded_http_codes: [404, 405]
+                channels: ["!event"]
+            nested:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+
+when@prod:
+    monolog:
+        handlers:
+            main:
+                type: fingers_crossed
+                action_level: error
+                handler: nested
+                excluded_http_codes: [404, 405]
+                channels: ["!deprecation", "!stevia", "!stevia_entrainement"]
+                buffer_size: 50
+            nested:
+                type: stream
+                path: php://stderr
+                level: debug
+                formatter: monolog.formatter.json
+            console:
+                type: console
+                process_psr_3_messages: false
+                channels: ["!event", "!doctrine"]
+            deprecation:
+                type: stream
+                channels: [deprecation]
+                path: php://stderr
+                formatter: monolog.formatter.json
+            stevia:
+                type: stream
+                path: "%kernel.logs_dir%/stevia.log"
+                level: info
+                channels: [stevia]
+            stevia_entrainement:
+                type: stream
+                path: "%kernel.logs_dir%/stevia-entrainement.log"
+                level: info
+                channels: [stevia_entrainement]

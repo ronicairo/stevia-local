@@ -1,0 +1,315 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Entraînement ML{% endblock %}
+{% block page_title %}Classifieur de pertinence — Entraînement ML{% endblock %}
+
+{% block content %}
+
+{# ── Statut du modèle ─────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+
+    <div class="col-md-3">
+        <div class="stat-card h-100">
+            <div class="stat-card-icon" id="statModelIconWrapper" style="background: {{ status.model_trained ? '#198754' : '#6c757d' }}22; color: {{ status.model_trained ? '#198754' : '#6c757d' }}">
+                <i id="statModelIcon" class="bi {{ status.model_trained ? 'bi-check-circle-fill' : 'bi-x-circle' }}"></i>
+            </div>
+            <div class="stat-card-body">
+                <div id="statModelValue" class="stat-card-value">{{ status.model_trained ? 'Actif' : 'Absent' }}</div>
+                <div class="stat-card-label">Modèle</div>
+                <small id="statModelName" class="text-muted">{{ status.model_name ?? '' }}</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="stat-card h-100">
+            <div class="stat-card-icon" style="background: #0d6efd22; color: #0d6efd">
+                <i class="bi bi-bar-chart-fill"></i>
+            </div>
+            <div class="stat-card-body">
+                <div id="statF1Value" class="stat-card-value">
+                    {% if status.metrics.f1 is defined %}{{ (status.metrics.f1 * 100)|round(1) }} %{% else %}—{% endif %}
+                </div>
+                <div class="stat-card-label">F1-score</div>
+                <small id="statAccValue" class="text-muted">
+                    {% if status.metrics.accuracy is defined %}Accuracy : {{ (status.metrics.accuracy * 100)|round(1) }} %{% endif %}
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="stat-card h-100">
+            <div class="stat-card-icon" style="background: #fd7e1422; color: #fd7e14">
+                <i class="bi bi-table"></i>
+            </div>
+            <div class="stat-card-body">
+                <div id="statDatasetValue" class="stat-card-value">{{ status.dataset_size ?? '—' }}</div>
+                <div class="stat-card-label">Exemples dataset</div>
+                <small id="statNTrain" class="text-muted">{{ status.n_train ? status.n_train ~ ' en entraînement' : '' }}</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="stat-card h-100">
+            <div class="stat-card-icon" style="background: #6f42c122; color: #6f42c1">
+                <i class="bi bi-hand-thumbs-up-fill"></i>
+            </div>
+            <div class="stat-card-body">
+                <div id="statFbValue" class="stat-card-value">{{ status.feedback_labeled ?? 0 }}</div>
+                <div class="stat-card-label">Feedbacks étiquetés</div>
+                <small id="statFbPending" class="text-muted">{{ status.feedback_pending ?? 0 }} en attente</small>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{# ── Pipeline d'entraînement ──────────────────────────────── #}
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="sucre-card">
+            <div class="sucre-card-header">
+                <i class="bi bi-play-circle me-2"></i> Pipeline d'entraînement
+            </div>
+            <div class="sucre-card-body">
+
+                <p class="text-muted small mb-3">
+                    Exécutez les étapes dans l'ordre. Chaque étape streame sa sortie dans le terminal ci-contre.
+                </p>
+
+                <div class="d-grid gap-2">
+
+                    <button class="btn btn-outline-primary btn-ml-step" data-step="generate">
+                        <i class="bi bi-database-add me-2"></i>
+                        <div class="text-start">
+                            <div class="fw-semibold">1 — Générer le dataset</div>
+                            <small class="text-muted">Questions auto via LLM + labélisation</small>
+                        </div>
+                    </button>
+
+                    <button class="btn btn-outline-primary btn-ml-step" data-step="train">
+                        <i class="bi bi-diagram-3 me-2"></i>
+                        <div class="text-start">
+                            <div class="fw-semibold">2 — Entraîner les modèles</div>
+                            <small class="text-muted">RandomForest, KNN, Decision Tree, Logistic</small>
+                        </div>
+                    </button>
+
+                    <button class="btn btn-outline-primary btn-ml-step" data-step="optimize">
+                        <i class="bi bi-sliders me-2"></i>
+                        <div class="text-start">
+                            <div class="fw-semibold">3 — Optimiser les hyperparamètres</div>
+                            <small class="text-muted">GridSearchCV 5-fold sur le meilleur modèle</small>
+                        </div>
+                    </button>
+
+                    <button class="btn btn-outline-primary btn-ml-step" data-step="evaluate">
+                        <i class="bi bi-clipboard-data me-2"></i>
+                        <div class="text-start">
+                            <div class="fw-semibold">4 — Évaluation finale</div>
+                            <small class="text-muted">Accuracy, F1, AUC-ROC, matrice de confusion</small>
+                        </div>
+                    </button>
+
+                    <hr class="my-1">
+
+                    <button class="btn btn-outline-secondary btn-ml-step" data-step="retrain">
+                        <i class="bi bi-arrow-repeat me-2"></i>
+                        <div class="text-start">
+                            <div class="fw-semibold">Réentraîner depuis les feedbacks</div>
+                            <small class="text-muted">Fusionne dataset + feedbacks utilisateurs</small>
+                        </div>
+                    </button>
+
+                </div>
+
+                <div class="last-retrain-block mt-3 p-2 rounded {{ status.last_retrain_at is defined and status.last_retrain_at ? '' : 'd-none' }}" style="background: #f8f9fa; font-size: 0.75rem; color: #6c757d">
+                    <i class="bi bi-clock me-1"></i> Dernier entraînement :
+                    <span id="lastTrainAt">{{ status.last_retrain_at is defined and status.last_retrain_at ? status.last_retrain_at|slice(0, 19)|replace({'T': ' '}) : '' }}</span>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    {# Terminal #}
+    <div class="col-lg-7">
+        <div class="sucre-card h-100 d-flex flex-column">
+            <div class="sucre-card-header d-flex align-items-center justify-content-between">
+                <span><i class="bi bi-terminal me-2"></i> Sortie</span>
+                <div class="d-flex align-items-center gap-2">
+                    <span id="mlStatus" class="badge bg-secondary">En attente</span>
+                    <button class="btn btn-sm btn-outline-secondary py-0" id="btnClearTerminal" title="Effacer">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="sucre-card-body p-0 flex-grow-1" style="min-height: 420px">
+                <pre id="mlTerminal" style="
+                    background: #0d1117;
+                    color: #c9d1d9;
+                    font-family: 'Courier New', monospace;
+                    font-size: 0.78rem;
+                    line-height: 1.5;
+                    padding: 1rem;
+                    margin: 0;
+                    height: 100%;
+                    min-height: 420px;
+                    overflow-y: auto;
+                    border-radius: 0 0 8px 8px;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                "><span style="color:#58a6ff">Stevia ML</span> — Cliquez sur une étape pour lancer l'entraînement.
+</pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block javascripts %}
+<script>
+(function () {
+    const terminal   = document.getElementById('mlTerminal');
+    const statusBadge = document.getElementById('mlStatus');
+    let   running    = false;
+
+    document.getElementById('btnClearTerminal').addEventListener('click', () => {
+        terminal.innerHTML = '<span style="color:#58a6ff">Stevia ML</span> — Terminal effacé.\n';
+    });
+
+    async function refreshStats() {
+        try {
+            const r    = await fetch('/stevia/ml/status');
+            const data = await r.json();
+
+            // Modèle
+            const modelVal  = document.getElementById('statModelValue');
+            const modelIcon = document.getElementById('statModelIcon');
+            const modelName = document.getElementById('statModelName');
+            if (modelVal)  modelVal.textContent  = data.model_trained ? 'Actif' : 'Absent';
+            if (modelIcon) {
+                modelIcon.className = 'bi ' + (data.model_trained ? 'bi-check-circle-fill' : 'bi-x-circle');
+                modelIcon.closest('.stat-card-icon').style.color      = data.model_trained ? '#198754' : '#6c757d';
+                modelIcon.closest('.stat-card-icon').style.background = data.model_trained ? '#19875422' : '#6c757d22';
+            }
+            if (modelName) modelName.textContent = data.model_name ?? '';
+
+            // F1
+            const f1Val  = document.getElementById('statF1Value');
+            const accVal = document.getElementById('statAccValue');
+            if (f1Val)  f1Val.textContent  = data.metrics?.f1  != null ? (data.metrics.f1  * 100).toFixed(1) + ' %' : '—';
+            if (accVal) accVal.textContent = data.metrics?.accuracy != null ? 'Accuracy : ' + (data.metrics.accuracy * 100).toFixed(1) + ' %' : '';
+
+            // Dataset
+            const dsVal   = document.getElementById('statDatasetValue');
+            const nTrain  = document.getElementById('statNTrain');
+            if (dsVal)  dsVal.textContent  = data.dataset_size ?? '—';
+            if (nTrain) nTrain.textContent = data.n_train ? data.n_train + ' en entraînement' : '';
+
+            // Feedbacks
+            const fbVal     = document.getElementById('statFbValue');
+            const fbPending = document.getElementById('statFbPending');
+            if (fbVal)     fbVal.textContent     = data.feedback_labeled ?? 0;
+            if (fbPending) fbPending.textContent = (data.feedback_pending ?? 0) + ' en attente';
+
+            // Dernier entraînement
+            const lastTrain = document.getElementById('lastTrainAt');
+            if (lastTrain && data.last_retrain_at) {
+                lastTrain.textContent = data.last_retrain_at.slice(0, 19).replace('T', ' ');
+                lastTrain.closest('.last-retrain-block')?.classList.remove('d-none');
+            }
+        } catch (e) {
+            // silencieux
+        }
+    }
+
+    function appendLine(text, color) {
+        const span = document.createElement('span');
+        if (color) span.style.color = color;
+
+        // Colorisation simple des lignes
+        if (text.includes('✓') || text.includes('OK') || text.includes('meilleur') || text.includes('terminée')) {
+            span.style.color = '#3fb950';
+        } else if (text.includes('Erreur') || text.includes('✗') || text.includes('Error')) {
+            span.style.color = '#f85149';
+        } else if (text.includes('===') || text.includes('───')) {
+            span.style.color = '#58a6ff';
+        } else if (text.includes('[ML]') || text.includes('[Retrain]') || text.includes('[Feedback]')) {
+            span.style.color = '#d2a8ff';
+        } else if (text.match(/\d+\.\d{4}/)) {
+            span.style.color = '#ffa657';
+        }
+
+        span.textContent = text + '\n';
+        terminal.appendChild(span);
+        terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    document.querySelectorAll('.btn-ml-step').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            if (running) return;
+
+            const step     = this.dataset.step;
+            const label    = this.querySelector('.fw-semibold').textContent;
+            running        = true;
+
+            // Efface le terminal uniquement au début d'une nouvelle étape
+            terminal.innerHTML = '';
+            appendLine(`▶ Lancement : ${label}`, '#58a6ff');
+            appendLine('─'.repeat(60), '#30363d');
+            statusBadge.className   = 'badge bg-warning text-dark';
+            statusBadge.textContent = 'En cours…';
+
+            document.querySelectorAll('.btn-ml-step').forEach(b => b.disabled = true);
+
+            try {
+                const response = await fetch(`/stevia/ml/run/${step}`, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                });
+
+                const reader  = response.body.getReader();
+                const decoder = new TextDecoder();
+                let   buffer  = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const raw of lines) {
+                        if (!raw.trim()) continue;
+                        try {
+                            const data = JSON.parse(raw);
+                            appendLine(data.line ?? raw);
+                            if (data.done) {
+                                statusBadge.className   = 'badge bg-success';
+                                statusBadge.textContent = 'Terminé';
+                            }
+                        } catch {
+                            appendLine(raw);
+                        }
+                    }
+                }
+
+            } catch (e) {
+                appendLine(`Erreur réseau : ${e.message}`, '#f85149');
+                statusBadge.className   = 'badge bg-danger';
+                statusBadge.textContent = 'Erreur';
+            } finally {
+                running = false;
+                document.querySelectorAll('.btn-ml-step').forEach(b => b.disabled = false);
+                refreshStats();
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}

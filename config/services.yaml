@@ -1,0 +1,24 @@
+parameters:
+    stevia_api_url: '%env(STEVIA_API_URL)%'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/DependencyInjection/'
+            - '../src/Entity/'
+            - '../src/Kernel.php'
+
+    App\Controller\SteviaController:
+        arguments:
+            $apiStevia: '%stevia_api_url%'
+        tags: ['controller.service_arguments']
+
+    App\Controller\MlController:
+        arguments:
+            $apiStevia: '%stevia_api_url%'
+        tags: ['controller.service_arguments']

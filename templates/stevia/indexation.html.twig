@@ -1,0 +1,138 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Indexation Stevia{% endblock %}
+{% block page_title %}Indexation documentaire{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mt-1">
+    <ol class="breadcrumb mb-0 small">
+        <li class="breadcrumb-item"><a href="{{ path('home') }}">Accueil</a></li>
+        <li class="breadcrumb-item active">Stevia — Indexation</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block page_actions %}
+<div class="d-flex gap-2">
+    <button class="btn btn-primary btn-sm" id="btn-index-all">
+        <i class="bi bi-arrow-repeat me-1"></i>Tout indexer
+    </button>
+    <button class="btn btn-outline-danger btn-sm" id="btn-delete-all">
+        <i class="bi bi-trash me-1"></i>Tout supprimer
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="sucre-card">
+    <div class="sucre-card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-database me-2"></i>Documents BookStack indexés</span>
+        <span class="badge bg-secondary">{{ books|length }} livre(s)</span>
+    </div>
+
+    <div class="sucre-card-body p-0">
+
+        {% if books is empty %}
+        <div class="p-5 text-center text-muted">
+            <i class="bi bi-database-x" style="font-size: 3rem; opacity: 0.4;"></i>
+            <p class="mt-3 mb-1">Aucun document disponible.</p>
+            <p class="small">
+                Vérifiez que l'API Stevia est bien démarrée
+                (<code>http://localhost:8001</code>) et que BookStack est accessible.
+            </p>
+            <a href="{{ path('stevia_indexation') }}" class="btn btn-sm btn-outline-primary mt-2">
+                <i class="bi bi-arrow-clockwise me-1"></i>Actualiser
+            </a>
+        </div>
+        {% else %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Livre</th>
+                        <th class="text-center">Pages</th>
+                        <th class="text-center">Chunks</th>
+                        <th class="text-center">Statut</th>
+                        <th>Indexé le</th>
+                        <th>Mis à jour (BookStack)</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for book in books %}
+                <tr>
+                    <td>
+                        <strong>{{ book.name ?? book.book_name ?? 'Sans titre' }}</strong>
+                        {% if book.slug is defined %}
+                            <br><span class="text-muted small font-monospace">{{ book.slug }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {{ book.page_count ?? book.pages_count ?? '—' }}
+                    </td>
+                    <td class="text-center">
+                        {{ book.chunk_count ?? book.chunks ?? '—' }}
+                    </td>
+                    <td class="text-center">
+                        {% if book.is_indexed ?? book.indexed ?? false %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle me-1"></i>Indexé
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary">
+                                <i class="bi bi-dash-circle me-1"></i>Non indexé
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="small text-muted">
+                        {% if book.indexed_at is defined and book.indexed_at %}
+                            {{ book.indexed_at|date('d/m/Y H:i') }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td class="small text-muted">
+                        {% if book.updated_at is defined and book.updated_at %}
+                            {{ book.updated_at|date('d/m/Y H:i') }}
+                        {% elseif book.bookstack_updated_at is defined and book.bookstack_updated_at %}
+                            {{ book.bookstack_updated_at|date('d/m/Y H:i') }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <div class="d-flex justify-content-end gap-1">
+                            <button class="btn btn-sm btn-primary btn-index-book"
+                                    data-book-id="{{ book.id }}"
+                                    title="Indexer ce livre">
+                                <i class="bi bi-arrow-repeat me-1"></i>Indexer
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger btn-delete-book"
+                                    data-book-id="{{ book.id }}"
+                                    data-book-name="{{ book.name ?? book.book_name ?? 'ce livre' }}"
+                                    title="Supprimer l'index">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+    </div>
+
+    {% if books is not empty %}
+    <div class="sucre-card-footer text-muted small">
+        <i class="bi bi-info-circle me-1"></i>
+        Les chunks sont extraits des pages BookStack et vectorisés avec
+        <strong>BAAI/bge-small-en-v1.5</strong> (384 dim) via FastEmbed,
+        puis stockés dans PostgreSQL + pgvector.
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}

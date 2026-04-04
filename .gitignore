@@ -1,0 +1,27 @@
+
+###> symfony/framework-bundle ###
+/.env.local
+/.env.local.php
+/.env.*.local
+/config/secrets/prod/prod.decrypt.private.php
+/public/bundles/
+/var/
+/vendor/
+###< symfony/framework-bundle ###
+
+###> symfony/webpack-encore-bundle ###
+/node_modules/
+/public/build/
+npm-debug.log
+yarn-error.log
+###< symfony/webpack-encore-bundle ###
+
+###> Stevia — fichiers sensibles et générés ###
+src/Stevia/.env
+src/Stevia/ml/dataset/*.pkl
+src/Stevia/ml/dataset/*.csv
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+###< Stevia ###

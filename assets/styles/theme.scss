@@ -1,0 +1,52 @@
+@use "../../vendor/cnam/front-bundle/assets/dist/styles/filigram/palette" as palette;
+@use 'sass:map';
+@import "../styles/_variables.scss";
+@import "../../vendor/twbs/bootstrap/scss/functions";
+@import "~bootstrap/scss/variables";
+
+:root {
+  --bs-body-color: #{palette.color('gris', 600)};
+}
+
+[data-bs-theme="clair"] {
+  // ===== Variables Assurance Maladie =====
+
+  // Backgrounds
+  --am-background-base: #{palette.$blanc};
+  --am-background-accent: #{palette.color('cyan', 700)};
+  --am-background-inverse: #{palette.$blanc};
+  --am-background-alt: #{palette.color('parme', 100)};
+  --am-background-active: #{palette.color('brique', 700)};
+
+  // Textes
+  --am-text-base: #{palette.color('gris', 700)};
+  --am-text-inverse: #{palette.$blanc};
+  --am-text-accent: #{palette.color('bleu-am', 600)};
+  --am-text-accent-contrasted: #{palette.color('bleu-am', 800)};
+  --am-text-muted: #{palette.color('gris', 400)};
+  --am-text-light: #{palette.color('gris', 100)};
+  --am-text-dark: #{palette.color('gris', 900)};
+  --am-text-alt: #{palette.color('parme', 700)};
+
+  // Borders
+  --am-border-base: #{palette.color('gris', 300)};
+
+  // Application
+  --am-application-title: #{palette.color('bleu-am', 600)};
+
+  // Page Header
+  --am-page-header-text: #{palette.$blanc};
+  --am-page-header-text-inverse: #{palette.color('gris', 100)};
+  --am-page-header-background: #00749C;
+
+  // Menu colors
+  --am-menu-background-main: #00749C;
+  --am-menu-background-level-1: #{palette.color('cyan', 700)};
+  --am-menu-background-level-2: #{palette.color('cyan', 600)};
+  --am-menu-active: #{palette.color('brique', 700)};
+  --am-menu-active-text: #{palette.$blanc};
+  --am-menu-header: #00749C;
+  --am-menu-border: #{palette.$blanc};
+  --am-menu-text: #{palette.$blanc};
+  --am-menu-text-over: #{palette.$blanc};
+}

@@ -1,0 +1,53 @@
+{# =====================================================================
+   Widget Stevia — Chatbot documentaire RAG
+   Présent sur TOUTES les pages via base.html.twig
+   ===================================================================== #}
+
+{# Bouton flottant #}
+<button class="stevia-floating-btn" id="stevia-chat-toggle" title="Ouvrir Stevia">
+    <img src="{{ asset('images/stevia3.png') }}" alt="Stevia">
+</button>
+
+{# Fenêtre de chat #}
+<div class="stevia-chat-window hidden" id="stevia-chat-window" role="dialog" aria-label="Chatbot Stevia" aria-modal="true">
+
+    {# Header #}
+    <div class="stevia-header">
+        <div class="stevia-header-left">
+            <img src="{{ asset('images/stevia2.png') }}" alt="Logo Stevia">
+            <div>
+                <div class="stevia-title">Stevia</div>
+                <div class="stevia-subtitle">
+                    <span class="stevia-status-dot offline" id="stevia-status-dot" title="Statut API"></span>
+                    Assistante documentaire IA
+                </div>
+            </div>
+        </div>
+        <button class="stevia-close-btn" id="stevia-close-btn" aria-label="Fermer">✕</button>
+    </div>
+
+    {# Zone de messages #}
+    <div class="stevia-messages" id="stevia-messages" role="log" aria-live="polite" aria-label="Conversation"></div>
+
+    {# Indicateur de frappe #}
+    <div class="stevia-typing hidden" id="stevia-typing" aria-label="Stevia rédige une réponse">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+    </div>
+
+    {# Zone de saisie #}
+    <div class="stevia-input-area">
+        <input
+            type="text"
+            id="stevia-input"
+            placeholder="Posez votre question…"
+            autocomplete="off"
+            aria-label="Votre question"
+        >
+        <button class="stevia-send-btn" id="stevia-send" title="Envoyer (Entrée)">
+            <i class="bi bi-send"></i>
+        </button>
+    </div>
+
+</div>

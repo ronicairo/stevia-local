@@ -1,0 +1,98 @@
+Commandes utiles Podman – Stevia (PROD)
+
+Vérification de l’environnement Podman
+podman --version
+podman info
+
+Lister les images Podman
+podman images
+
+Supprimer une image Podman
+podman rmi stevia-backend:prod
+
+Nettoyer les images inutilisées
+podman image prune
+
+Se placer dans le dossier du backend Stevia
+cd /app/ia/stevia
+
+Build de l’image Stevia (backend IA)
+podman build -t stevia-backend:prod .
+
+Lancer le container Stevia en production (sécurisé localhost + volume data)
+podman run -d --name stevia-backend -p 127.0.0.1:8001:8001 -v /app/ia/stevia/data:/data:Z --restart=always stevia-backend:prod
+
+Lister les containers en cours d’exécution
+podman ps
+
+Lister tous les containers
+podman ps -a
+
+Arrêter le container Stevia
+podman stop stevia-backend
+
+Démarrer le container Stevia
+podman start stevia-backend
+
+Redémarrer le container Stevia
+podman restart stevia-backend
+
+Supprimer le container Stevia
+podman rm stevia-backend
+
+Consulter les logs du container Stevia
+podman logs stevia-backend
+
+Suivre les logs en temps réel
+podman logs -f stevia-backend
+
+Entrer dans le container Stevia (debug)
+podman exec -it stevia-backend bash
+
+Tester le healthcheck du backend Stevia
+curl http://127.0.0.1:8001/health
+
+Tester l’API Stevia (/ask)
+curl -X POST http://127.0.0.1:8001/ask
+ -H "Content-Type: application/json" -d '{"question":"test","role":"user"}'
+
+Lancer Qdrant en container Podman
+podman run -d --name qdrant -p 6333:6333 -v /app/ia/qdrant:/qdrant/storage:Z qdrant/qdrant
+
+Vérifier les collections Qdrant
+curl http://127.0.0.1:6333/collections
+
+Procédure de mise à jour Stevia (rebuild complet)
+podman stop stevia-backend
+podman rm stevia-backend
+podman rmi stevia-backend:prod
+podman build -t stevia-backend:prod .
+podman run -d --name stevia-backend -p 127.0.0.1:8001:8001 -v /app/ia/stevia/data:/data:Z --restart=always stevia-backend:prod
+
+Générer un service systemd pour démarrage automatique
+podman generate systemd --name stevia-backend --files --new
+
+Installer le service systemd
+mv container-stevia-backend.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable stevia-backend
+systemctl start stevia-backend
+
+Vérifier le statut du service
+systemctl status stevia-backend
+
+Vérifier le mode SELinux
+getenforce
+
+Autoriser Apache à appeler un service réseau local (obligatoire pour Symfony → Stevia)
+setsebool -P httpd_can_network_connect 1
+
+Nettoyage global Podman (attention : supprime images et containers inutilisés)
+podman system prune
+
+Bonnes pratiques production
+Le backend IA Stevia est hors du projet Symfony SUCRE
+Les données et index sont montés via volumes Podman
+Les ports ne sont exposés qu’en localhost
+La séparation user / admin est gérée côté backend
+Le contrôle des rôles est fait côté Symfony, jamais côté front

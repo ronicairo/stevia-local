@@ -1,0 +1,6 @@
+webpack_encore:
+    output_path: '%kernel.project_dir%/public/build'
+    # strict_mode: false permet de démarrer sans avoir compilé les assets Encore
+    strict_mode: false
+    script_attributes:
+        defer: true

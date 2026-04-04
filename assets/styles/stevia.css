@@ -1,0 +1,502 @@
+.stevia-floating-btn {
+    position: fixed;
+    bottom: 1.5em;
+    right: 1.5em;
+    width: 4em;
+    height: 4em;
+    border-radius: 50%;
+    background: #ffffff;
+    cursor: pointer;
+    font-size: 1.2em;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0.5em 1.375em rgba(0, 0, 0, 0.44);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 9999;
+    user-select: none;
+}
+
+.stevia-floating-btn img {
+    width: 2.5em;
+    height: 2.5em;
+    object-fit: contain;
+}
+
+.stevia-floating-btn:hover {
+    transform: translateY(-4px) scale(1.05);
+    box-shadow: 0 12px 32px rgba(0, 116, 156, 0.45);
+}
+
+.stevia-floating-btn:active {
+    transform: translateY(-2px) scale(1.02);
+}
+
+.stevia-chat-window {
+    position: fixed;
+    bottom: 110px;
+    right: 25px;
+    width: 400px;
+    height: 600px;
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3),
+    0 0 1px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: fadeInUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 9999;
+    backdrop-filter: blur(10px);
+}
+
+.hidden {
+    display: none !important;
+}
+.hidden { display: none !important; }
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.stevia-header {
+    background: linear-gradient(135deg, #00749C 0%, #005f7c 100%);
+    padding: 18px 20px;
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    position: relative;
+}
+
+.stevia-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+    transparent,
+    rgba(255,255,255,0.3),
+    transparent
+    );
+}
+
+.stevia-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.stevia-header-left img {
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+    border-radius: 12px;
+    padding: 6px;
+    backdrop-filter: blur(10px);
+}
+
+.stevia-title {
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: 0.5px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.stevia-subtitle {
+    font-size: 12px;
+    margin-top: 2px;
+    opacity: 0.9;
+    font-weight: 400;
+}
+
+.stevia-close-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    color: white;
+    font-size: 22px;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.stevia-close-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: rotate(90deg);
+}
+
+.stevia-messages {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: linear-gradient(180deg, #f8f9fa 0%, #ffffff 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.stevia-messages::-webkit-scrollbar {
+    width: 6px;
+}
+
+.stevia-messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.stevia-messages::-webkit-scrollbar-thumb {
+    background: rgba(0, 116, 156, 0.3);
+    border-radius: 3px;
+}
+
+.stevia-messages::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 116, 156, 0.5);
+}
+
+.user-message {
+    align-self: flex-end;
+    background: linear-gradient(135deg, #00749C 0%, #0088b8 100%);
+    color: #ffffff;
+    padding: 12px 16px;
+    border-radius: 18px 18px 4px 18px;
+    max-width: 75%;
+    font-size: 14px;
+    line-height: 1.5;
+    box-shadow: 0 2px 8px rgba(0, 116, 156, 0.2);
+    animation: slideInRight 0.3s ease;
+    word-wrap: break-word;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.bot-message {
+    align-self: flex-start;
+    background: #ffffff;
+    color: #2c3e50;
+    padding: 12px 16px;
+    border-radius: 18px 18px 18px 4px;
+    max-width: 80%;
+    font-size: 14px;
+    line-height: 1.6;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    animation: slideInLeft 0.3s ease;
+    word-wrap: break-word;
+}
+
+@keyframes slideInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.bot-message ul {
+    margin: 10px 0;
+    padding-left: 20px;
+    list-style-type: none;
+}
+
+.bot-message li {
+    margin-bottom: 8px;
+    position: relative;
+    padding-left: 8px;
+}
+
+.bot-message li::before {
+    content: '•';
+    color: #00749C;
+    font-weight: bold;
+    position: absolute;
+    left: -12px;
+}
+
+.bot-message strong {
+    color: #00749C;
+    font-weight: 600;
+}
+
+.stevia-typing {
+    height: 40px;
+    padding-left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.02));
+}
+
+.typing-dot {
+    width: 8px;
+    height: 8px;
+    background: linear-gradient(135deg, #00749C, #0088b8);
+    border-radius: 50%;
+    animation: typing 1.4s infinite ease-in-out;
+    box-shadow: 0 0 4px rgba(0, 116, 156, 0.3);
+}
+
+.typing-dot:nth-child(1) { animation-delay: 0s; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing {
+    0%, 60%, 100% {
+        transform: translateY(0);
+        opacity: 0.7;
+    }
+    30% {
+        transform: translateY(-10px);
+        opacity: 1;
+    }
+}
+
+.stevia-input-area {
+    display: flex;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    background: #ffffff;
+    padding: 12px;
+    gap: 8px;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+#stevia-input {
+    flex: 1;
+    padding: 12px 16px;
+    border: 2px solid transparent;
+    font-size: 14px;
+    outline: none;
+    border-radius: 12px;
+    background: #f5f6f7;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+#stevia-input:focus {
+    background: #ffffff;
+    border-color: #00749C;
+    box-shadow: 0 0 0 3px rgba(0, 116, 156, 0.1);
+}
+
+#stevia-input::placeholder {
+    color: #9ca3af;
+}
+
+.stevia-send-btn {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, #00749C 0%, #005f7c 100%);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 12px;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 116, 156, 0.25);
+}
+
+.stevia-send-btn:hover {
+    background: linear-gradient(135deg, #005f7c 0%, #004d66 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 116, 156, 0.35);
+}
+
+.stevia-send-btn:active {
+    transform: translateY(0);
+}
+
+.stevia-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #ef4444;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    transition: all 0.3s ease;
+    cursor: help;
+    position: relative;
+}
+
+.stevia-status-dot::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+.stevia-status-dot.online {
+    background-color: #10b981;
+}
+
+.stevia-status-dot.online::after {
+    background: #10b981;
+}
+
+.stevia-status-dot.offline::after {
+    background: #ef4444;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 currentColor;
+        opacity: 0.7;
+    }
+    50% {
+        box-shadow: 0 0 0 6px currentColor;
+        opacity: 0;
+    }
+    100% {
+        box-shadow: 0 0 0 0 currentColor;
+        opacity: 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .stevia-chat-window {
+        width: calc(100vw - 20px);
+        height: calc(100vh - 140px);
+        right: 10px;
+        bottom: 90px;
+        border-radius: 16px;
+    }
+
+    .stevia-floating-btn {
+        bottom: 1.2em;
+        right: 1.2em;
+        width: 3.5em;
+        height: 3.5em;
+    }
+
+    .user-message,
+    .bot-message {
+        max-width: 85%;
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -1000px 0;
+    }
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+.bot-message.loading {
+    background: linear-gradient(
+            90deg,
+            #f0f0f0 0%,
+            #e0e0e0 50%,
+            #f0f0f0 100%
+    );
+    background-size: 1000px 100%;
+    animation: shimmer 2s infinite;
+}
+
+.source-link {
+    display: inline-block;
+    padding: 6px 12px;
+    background: #e8e8e8;
+    border-radius: 6px;
+    color: black;
+    text-decoration: underline;
+    font-size: 0.9em;
+}
+
+#stevia-messages .bot-message p {
+    margin: 0 0 10px 0;
+}
+
+#stevia-messages .bot-message p:last-child {
+    margin-bottom: 0;
+}
+
+/* Feedback buttons */
+.stevia-feedback {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.stevia-feedback-btn {
+    background: #f5f5f5;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: #666;
+    transition: all 0.2s;
+}
+
+.stevia-feedback-btn:hover {
+    background: #e8e8e8;
+}
+
+.stevia-feedback-btn.positive:hover {
+    background: #d4edda;
+    color: #155724;
+}
+
+.stevia-feedback-btn.negative:hover {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.stevia-feedback-btn.selected {
+    pointer-events: none;
+}
+
+.stevia-feedback-btn.selected.positive {
+    background: #d4edda;
+    color: #155724;
+}
+
+.stevia-feedback-btn.selected.negative {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.stevia-feedback-thanks {
+    font-size: 12px;
+    color: #888;
+    margin-top: 8px;
+}

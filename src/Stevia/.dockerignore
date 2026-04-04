@@ -1,0 +1,10 @@
+# On ignore le stockage de Podman (CRUCIAL)
+podman_data
+
+# On ignore les fichiers inutiles (Bonne pratique)
+__pycache__
+*.pyc
+.git
+.venv
+venv
+.env

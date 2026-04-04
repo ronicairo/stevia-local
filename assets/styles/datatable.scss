@@ -1,0 +1,233 @@
+.dt-length {
+  height: 3em;
+  display: flex;
+  margin-bottom: .25rem;
+
+  label {
+    display: flex;
+    gap: 1em;
+    width: fit-content;
+    align-items: center;
+  }
+}
+
+.dt-processing {
+  &.card {
+    top: 50%;
+    position: absolute;
+    left: 50%;
+    border-radius: 0;
+  }
+
+  & > div:last-child {
+    display: none;
+  }
+}
+
+.dt-paging {
+  margin-top: .25rem !important;
+
+  .page-link {
+    border-radius: 0 !important;
+    background-color: var(--bs-table-bg);
+  }
+}
+
+.dataTable-buttons {
+  position: absolute;
+  right: 1em;
+  height: 2.75em;
+
+  #clearDataTable {
+    display: flex;
+    gap: 0.5em;
+    align-items: center;
+  }
+}
+
+.inline-buttons {
+  display: flex;
+  gap: 0.5em;
+  margin-bottom: 0.5em;
+  z-index: 1;
+
+  &.inline-right {
+    justify-content: right;
+  }
+}
+
+.dt-scroll-body {
+  scrollbar-color: #bfbfbf #eaeaea;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 20px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background-color: #eaeaea;
+    border-radius: 100px;
+  }
+}
+
+table {
+  --bs-table-color: #545859 !important;
+  --bs-table-bg: transparent;
+  --bs-table-border-color: #545859 !important;
+  --bs-table-striped-color: #545859 !important;
+  --bs-table-hover-color: white !important;
+
+  .subtable-container {
+    .dataTable {
+      margin-top: unset !important;
+      margin-bottom: unset !important;
+
+      tr {
+        &:hover {
+          & > td {
+            background-color: #2D90B3 !important;
+            color: white;
+
+            a {
+              color: white;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  &.dataTable {
+    .text-ellipsis {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      max-width: 10em;
+    }
+
+    thead {
+      tr {
+        --bs-table-color: #fff;
+        --bs-table-bg: #0084B2;
+        --bs-table-border-color: #339dc1;
+        --bs-table-striped-bg: #0d8ab6;
+        --bs-table-striped-color: #fff;
+        --bs-table-active-bg: #1a90ba;
+        --bs-table-active-color: #fff;
+        --bs-table-hover-bg: #138db8;
+        --bs-table-hover-color: #fff;
+      }
+
+      th {
+        vertical-align: top;
+        text-align: center;
+        padding: 0.25em 0.5em !important;
+        position: relative;
+
+        &.dt-orderable-asc, &.dt-orderable-desc {
+          .dt-column-title {
+            .sort-icon {
+              &:after {
+                margin-left: 0.5em;
+                font-family: "bootstrap-icons";
+                content: '\f283';
+
+              }
+            }
+          }
+
+          &[aria-sort="ascending"] {
+            .dt-column-title {
+              .sort-icon:after {
+                content: '\f282';
+              }
+            }
+          }
+
+          &[aria-sort="descending"] {
+            .dt-column-title {
+              .sort-icon:after {
+                content: '\f286';
+              }
+            }
+          }
+
+          .dt-column-order {
+            display: none;
+          }
+        }
+
+        .dt-column-title {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+
+          label {
+            white-space: nowrap;
+          }
+        }
+
+        .filter-value {
+          min-width: 8em;
+        }
+
+        .filter-operator {
+          min-width: 8em;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          -webkit-appearance: none;
+          padding: 0.25em;
+
+          option {
+            white-space: nowrap;
+          }
+        }
+      }
+    }
+
+    tbody {
+      tr:nth-of-type(odd) > * {
+        background-color: var(--bs-table-striped-bg);
+      }
+
+      tr {
+        &:hover, &.selected {
+          & > td:not(.subtable-container) {
+            background-color: #2D90B3 !important;
+            color: white;
+
+            a {
+              color: white;
+            }
+          }
+        }
+
+        &.selected:not(.subtable-container) {
+          & > td {
+            background-color: #246c88 !important;
+            box-shadow: unset !important;
+            color: white !important;
+          }
+        }
+      }
+    }
+
+    tfoot {
+      th {
+        padding: 0.25em 0.5em !important;
+        white-space: nowrap;
+      }
+    }
+  }
+}
+
+.ui-datepicker-calendar {
+  display: none;
+}
+
+.table-primary th {
+  --bs-table-bg: #0083b1;
+  --bs-table-bg-state: #0083b1;
+  --bs-table-color: #fff;
+}

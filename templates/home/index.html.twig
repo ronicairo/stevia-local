@@ -1,0 +1,121 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Accueil{% endblock %}
+{% block page_title %}Tableau de bord{% endblock %}
+
+{% block content %}
+
+{# Stat cards #}
+<div class="row g-3 mb-4">
+    {% for stat in stats %}
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="stat-card stat-card--{{ stat.color }}">
+            <div class="stat-card-icon">
+                <i class="bi {{ stat.icon }}"></i>
+            </div>
+            <div class="stat-card-body">
+                <div class="stat-card-value">{{ stat.value }}</div>
+                <div class="stat-card-label">{{ stat.label }}</div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{# Main content row #}
+<div class="row g-3">
+
+    {# Recent dossiers #}
+    <div class="col-12 col-xl-8">
+        <div class="sucre-card">
+            <div class="sucre-card-header">
+                <i class="bi bi-clock-history me-2"></i>Dossiers récents
+            </div>
+            <div class="sucre-card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Référence</th>
+                            <th>Débiteur</th>
+                            <th>Montant</th>
+                            <th>Statut</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in recentDossiers %}
+                        <tr>
+                            <td class="font-monospace">{{ d.ref }}</td>
+                            <td>{{ d.debiteur }}</td>
+                            <td class="text-end">{{ d.montant }}</td>
+                            <td>
+                                {% set badgeClass = {
+                                    'Amiable':    'bg-primary',
+                                    'Contentieux':'bg-warning text-dark',
+                                    'Recouvré':   'bg-success',
+                                    'Clôturé':    'bg-secondary'
+                                } %}
+                                <span class="badge {{ badgeClass[d.statut] ?? 'bg-secondary' }}">
+                                    {{ d.statut }}
+                                </span>
+                            </td>
+                            <td class="text-muted small">{{ d.date }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {# Right panel #}
+    <div class="col-12 col-xl-4">
+
+        {# Stevia info card #}
+        <div class="sucre-card mb-3">
+            <div class="sucre-card-header">
+                <i class="bi bi-robot me-2"></i>Stevia — Assistante IA
+            </div>
+            <div class="sucre-card-body text-center py-4">
+                <img src="{{ asset('images/stevia2.png') }}" alt="Stevia" style="width:80px; height:80px; object-fit:contain; border-radius:16px; margin-bottom:12px;">
+                <p class="text-muted small mb-3">
+                    Posez vos questions sur les procédures et la documentation SUCRE.<br>
+                    Stevia recherche dans la base documentaire indexée.
+                </p>
+                <button class="btn btn-primary btn-sm" onclick="document.getElementById('stevia-chat-toggle').click()">
+                    <i class="bi bi-chat-dots me-1"></i> Ouvrir Stevia
+                </button>
+            </div>
+        </div>
+
+        {# Quick links #}
+        <div class="sucre-card">
+            <div class="sucre-card-header">
+                <i class="bi bi-lightning-charge me-2"></i>Accès rapides
+            </div>
+            <div class="sucre-card-body p-0">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item list-group-item-action d-flex align-items-center gap-2">
+                        <i class="bi bi-file-earmark-plus text-primary"></i>
+                        <a href="#" class="stretched-link text-decoration-none">Nouvelle créance</a>
+                    </li>
+                    <li class="list-group-item list-group-item-action d-flex align-items-center gap-2">
+                        <i class="bi bi-search text-primary"></i>
+                        <a href="#" class="stretched-link text-decoration-none">Rechercher un débiteur</a>
+                    </li>
+                    <li class="list-group-item list-group-item-action d-flex align-items-center gap-2">
+                        <i class="bi bi-database-gear text-primary"></i>
+                        <a href="{{ path('stevia_indexation') }}" class="stretched-link text-decoration-none">Indexation Stevia</a>
+                    </li>
+                    <li class="list-group-item list-group-item-action d-flex align-items-center gap-2">
+                        <i class="bi bi-bar-chart text-primary"></i>
+                        <a href="#" class="stretched-link text-decoration-none">Rapport mensuel</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

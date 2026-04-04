@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # 1. BASE DE DONNEES (PostgreSQL + Vector)
+  # ==========================================
+  database:
+    image: pgvector/pgvector:pg16
+    container_name: postgres_db
+    restart: always
+
+    # MODE HOST : Le conteneur partage le reseau de la machine
+    network_mode: "host"
+
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: stevia
+
+      # Configuration du Proxy
+      HTTP_PROXY: "http://127.0.0.1:3128/"
+      HTTPS_PROXY: "http://127.0.0.1:3128/"
+
+    volumes:
+      # Nouveau volume pour repartir a zero
+      - stevia_data_final:/var/lib/postgresql/data
+
+  # ==========================================
+  # 2. APPLICATION PYTHON (API Stevia)
+  # ==========================================
+  app:
+    image: localhost/stevia-app:latest
+    container_name: stevia-app
+    restart: always
+
+    # MODE HOST : Le conteneur partage le reseau de la machine
+    network_mode: "host"
+
+    environment:
+      # URL de connexion mise a jour pour l'utilisateur postgres
+      DATABASE_URL: postgresql://user:password@127.0.0.1:5432/stevia
+
+      # Configuration du Proxy (Vital)
+      HTTP_PROXY: "http://127.0.0.1:3128/"
+      HTTPS_PROXY: "http://127.0.0.1:3128/"
+      NO_PROXY: "localhost,127.0.0.1,::1"
+
+    volumes:
+      - ./data/docs:/app/data/docs
+
+# ==========================================
+# DEFINITIONS GLOBALES
+# ==========================================
+volumes:
+  stevia_data_final:

@@ -1,0 +1,71 @@
+@use "../../vendor/cnam/front-bundle/assets/dist/styles/filigram/palette" as palette;
+@use "../../vendor/twbs/bootstrap/scss/bootstrap" with (
+    $font-family-base: 'Source Sans Pro',
+    $font-family-monospace: 'Source Sans Pro',
+    $font-family-sans-serif: 'Source Sans Pro',
+    $font-size-base: 0.9rem,
+
+    $headings-font-weight: 500,
+    $headings-line-height: 1.2,
+
+    $enable-rounded: false,
+    $grid-breakpoints: (
+        xs: 0,
+        /* Breakpoint modifié pour éviter un passage prématuré du titre de l'application sous le logo */
+        sm: 670px,
+        md: 768px,
+        lg: 992px,
+        xl: 1200px,
+        xxl: 1400px
+    ),
+
+    $border-color: var(--am-border-base),
+
+    $primary: palette.color('cyan', 700),
+    $secondary: palette.color('cyan', 600),
+    $info: palette.color('parme', 700),
+    $success: palette.color('vert', 700),
+    $light: palette.color('gris', 100),
+    $dark: palette.color('gris', 700),
+
+    $warning: palette.color('jaune', 500),
+    $warning-border-subtle: palette.color('jaune', 500),
+    $warning-bg-subtle: palette.color('jaune', 500),
+    $warning-text-emphasis: var(--bs-black),
+
+    $danger: palette.color('brique', 700),
+    $danger-bg-subtle: palette.color('brique', 700),
+    $danger-text-emphasis: palette.$blanc,
+    $danger-border-subtle: palette.color('brique', 700),
+
+    $btn-close-color: palette.$blanc,
+    $btn-color: palette.$blanc,
+
+    $colors: (
+            "blue": palette.color('bleu-am', 600),
+            "indigo": palette.color('mauve', 700),
+            "purple": palette.color('parme', 700),
+            "pink": palette.color('rose', 700),
+            "red": palette.color('brique', 700),
+            "orange": palette.color('orange', 700),
+            "yellow": palette.color('jaune', 800),
+            "green": palette.color('vert', 800),
+            "teal": palette.color('bleu-givre', 800),
+            "cyan": palette.color('cyan', 800),
+            "black": palette.color('gris', 900),
+            "white": palette.$blanc,
+            "gray": palette.color('gris', 600),
+            "gray-dark": palette.color('gris', 800),
+    ),
+    $grays: (
+            "100": palette.color('gris', 100),
+            "200": palette.color('gris', 200),
+            "300": palette.color('gris', 300),
+            "400": palette.color('gris', 400),
+            "500": palette.color('gris', 500),
+            "600": palette.color('gris', 600),
+            "700": palette.color('gris', 700),
+            "800": palette.color('gris', 800),
+            "900": palette.color('gris', 900)
+    ))
+;
