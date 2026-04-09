@@ -45,8 +45,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Markdown bold
         formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
-        // Listes markdown
-        formatted = formatted.replace(/^\s*-\s+(.*)$/gm, '<li>$1</li>');
+        // Listes markdown (- ou *)
+        formatted = formatted.replace(/^\s*[-*]\s+(.*)$/gm, '<li>$1</li>');
         formatted = formatted.replace(/((<li\b[^>]*>.*?<\/li>\s*)+)/g, '<ul>$1</ul>');
 
         // Images markdown
@@ -111,7 +111,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     message_id: msgId,
                     question: question,
                     answer: answer,
-                    feedback: feedback
+                    feedback: feedback,
+                    user: window.STEVIA_USER || 'inconnu'
                 })
             });
         } catch (e) {

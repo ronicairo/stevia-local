@@ -82,6 +82,7 @@ class SteviaController extends AbstractController
     #[Route('/stevia/index/book/{bookId}', name: 'stevia_index_book', methods: ['POST'])]
     public function indexBook(int $bookId): JsonResponse
     {
+        set_time_limit(0);
         try {
             $response = $this->client->request(
                 'POST',
@@ -129,6 +130,7 @@ class SteviaController extends AbstractController
     #[Route('/stevia/index/all', name: 'stevia_index_all', methods: ['POST'])]
     public function indexAll(): JsonResponse
     {
+        set_time_limit(0);
         try {
             $books = $this->fetchBooks();
             $nbIndexed = $nbErrors = 0;
@@ -215,7 +217,7 @@ class SteviaController extends AbstractController
     private function fetchBooks(): array
     {
         try {
-            $response = $this->client->request('GET', $this->apiStevia . '/bookstack/books', ['timeout' => 10]);
+            $response = $this->client->request('GET', $this->apiStevia . '/bookstack/books', ['timeout' => 60]);
             if ($response->getStatusCode() === 200) {
                 $payload = $response->toArray(false);
                 if (($payload['status'] ?? '') === 'ok') {

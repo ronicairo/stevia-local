@@ -86,7 +86,7 @@ def retrain() -> dict:
     Réentraîne le modèle en fusionnant dataset original + feedbacks.
     Retourne les métriques du nouveau modèle.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     train_logger.info("[Retrain] Chargement des données...")
 
@@ -141,7 +141,7 @@ def retrain() -> dict:
     meta["metrics"] = {"accuracy": round(acc, 4), "f1": round(f1, 4)}
     meta["n_train"] = len(X_train)
     meta["n_feedback"] = len(df_feedback)
-    meta["last_retrain_at"] = datetime.utcnow().isoformat()
+    meta["last_retrain_at"] = datetime.now(timezone.utc).isoformat()
     joblib.dump(meta, META_PATH)
 
     # Invalider le cache du modèle en production

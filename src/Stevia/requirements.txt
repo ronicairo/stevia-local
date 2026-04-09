@@ -6,6 +6,7 @@ python-docx==1.1.0
 requests
 langchain
 langchain-community
+langchain-ollama
 langchain-postgres
 langchain-text-splitters
 fastembed>=0.2.0

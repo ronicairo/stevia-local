@@ -1,12 +1,18 @@
+import logging
 import os
 import time
 import nltk
 import re
 
+_LOG_DIR = os.getenv("STEVIA_LOG_DIR", "/app/var_log")
+os.makedirs(_LOG_DIR, exist_ok=True)
+rag_logger = logging.getLogger("stevia")
+rag_logger.setLevel(logging.INFO)
+
 from functools import lru_cache
 from langchain_core.documents import Document as LCDocument
 from langchain_postgres import PGVector
-from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+from langchain_community.embeddings import FastEmbedEmbeddings
 from sqlalchemy import create_engine, text
 from services.mistral_utils import refine_answer_streaming
 from services.bookstack_reader import parse_bookstack_page
@@ -25,6 +31,9 @@ BOOKSTACK_URL = os.getenv("BOOKSTACK_URL")
 if not BOOKSTACK_URL:
     raise ValueError("BOOKSTACK_URL non défini dans le .env")
 
+# URL publique pour les liens affichés à l'utilisateur (ex: http://localhost:8080)
+BOOKSTACK_PUBLIC_URL = os.getenv("BOOKSTACK_PUBLIC_URL", BOOKSTACK_URL)
+
 ENGINE = create_engine(
     DB_URL,
     pool_size=10,
@@ -37,7 +46,7 @@ def db_exec(stmt: str, params: dict | None = None):
     with ENGINE.begin() as conn:
         return conn.execute(text(stmt), params or {})
 
-embeddings = FastEmbedEmbeddings()
+embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 
 @lru_cache(maxsize=1)
 def get_vector_store():
@@ -54,9 +63,9 @@ def get_page_url(metadata: dict) -> str:
     page_id = metadata.get("page_id")
 
     if slug and book_slug:
-        return f"{BOOKSTACK_URL}/books/{book_slug}/page/{slug}"
+        return f"{BOOKSTACK_PUBLIC_URL}/books/{book_slug}/page/{slug}"
     elif page_id:
-        return f"{BOOKSTACK_URL}/link/{page_id}"
+        return f"{BOOKSTACK_PUBLIC_URL}/link/{page_id}"
     return ""
 
 
@@ -108,18 +117,27 @@ def rerank_documents(docs_with_scores: list, question: str, roles: list[str]) ->
     for doc, score in docs_with_scores:
         doc_roles = doc.metadata.get("roles", "all").split(",")
 
-        # Boost par rôle
+        # Boost par rôle (normalise role_admin → admin, etc.)
+        norm_roles = [r.replace("role_", "") for r in roles]
         role_boost = 0
-        if "admin" not in roles:
-            if any(r in doc_roles for r in roles) or "all" in doc_roles:
+        if "admin" not in norm_roles:
+            if any(r in doc_roles for r in norm_roles) or "all" in doc_roles:
                 role_boost = 0.05
 
-        # Boost par titre/gras
+        # Boost par titre/gras (décompose aussi les mots avec tiret ex: "aide-mémoire" → "aide","mémoire")
         title_words_str = doc.metadata.get("title_words", "")
-        title_words = set(title_words_str.lower().split(",")) if title_words_str else set()
+        title_words = set()
+        for w in title_words_str.lower().split(","):
+            title_words.add(w)
+            if "-" in w:
+                title_words.update(w.split("-"))
 
         bold_words_str = doc.metadata.get("bold_words", "")
-        bold_words = set(bold_words_str.lower().split(",")) if bold_words_str else set()
+        bold_words = set()
+        for w in bold_words_str.lower().split(","):
+            bold_words.add(w)
+            if "-" in w:
+                bold_words.update(w.split("-"))
 
         title_matches = question_words & title_words
         bold_matches = question_words & bold_words
@@ -136,10 +154,10 @@ def filter_off_topic(best_score: float, second_score: float) -> str | None:
     """Retourne un message de rejet si hors-sujet, sinon None."""
     score_gap = second_score - best_score
 
-    if best_score > 0.45:
+    if best_score > 0.75:
         return "Cette question ne relève pas de la documentation SUCRE."
 
-    if best_score > 0.35 and score_gap < 0.05:
+    if best_score > 0.65 and score_gap < 0.05:
         return "Cette question ne semble pas concerner la documentation SUCRE."
 
     return None
@@ -160,8 +178,8 @@ def build_context(docs_with_scores: list, best_page_id: str, search_keywords: li
 
     same_page_docs = sorted(same_page_docs, key=count_keyword_matches, reverse=True)
 
-    max_chars_per_doc = 1500
-    max_total_chars = 3000
+    max_chars_per_doc = 2000
+    max_total_chars = 4000
 
     context_parts = []
     all_images = []
@@ -261,7 +279,7 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
     # --- 3. RECHERCHE VECTORIELLE ---
     store = get_vector_store()
     try:
-        docs_with_scores = store.similarity_search_with_score(expanded_question, k=8)
+        docs_with_scores = store.similarity_search_with_score(expanded_question, k=12)
     except Exception as e:
         yield "Erreur technique lors de la recherche."
         return
@@ -278,9 +296,15 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
     docs_with_scores = rerank_documents(docs_with_scores, expanded_question, roles)
 
     # --- 6. FILTRAGE PAR CLASSIFIEUR ML (remplace filter_off_topic) ---
+    best_score_before_ml = docs_with_scores[0][1]
     try:
         from ml.predict import predict_relevance
-        docs_with_scores = predict_relevance(expanded_question, docs_with_scores, roles)
+        filtered = predict_relevance(expanded_question, docs_with_scores, roles)
+        # Si le meilleur doc avant ML avait un très bon score (< 0.15), on le protège
+        if not filtered or (filtered[0][1] > best_score_before_ml + 0.05 and best_score_before_ml < 0.15):
+            docs_with_scores = docs_with_scores  # garder tous les docs
+        else:
+            docs_with_scores = filtered
         if not docs_with_scores:
             yield "Je n'ai pas trouvé de documentation pertinente pour cette question."
             return
@@ -305,7 +329,14 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
     best_doc_roles = docs_with_scores[0][2]
     best_page_id = best_doc.metadata.get("page_id")
 
-    user_has_role = any(r in best_doc_roles for r in roles) or "all" in best_doc_roles or "admin" in roles
+    # Normalise les rôles : "role_admin" → "admin", "role_recouv" → "recouv"
+    normalized_roles = [r.replace("role_", "") for r in roles]
+
+    user_has_role = (
+        any(r in best_doc_roles for r in normalized_roles)
+        or "all" in best_doc_roles
+        or "admin" in normalized_roles
+    )
 
     if not user_has_role:
         role_display = best_doc_roles[0].upper() if best_doc_roles else "autre profil"
@@ -406,30 +437,35 @@ def index_bookstack_book(book_id: int, pages: list[dict], book_name: str = "", b
     return {"pages": pages_kept, "chunks": len(all_docs)}
 
 def list_indexed_bookstack_books() -> list[dict]:
-    rows = db_exec("""
-        SELECT
-            cmetadata->>'book_id' AS book_id,
-            MAX(cmetadata->>'book_name') AS book_name,
-            MAX(cmetadata->>'indexed_at') AS indexed_at,
-            COUNT(DISTINCT cmetadata->>'page_id') AS pages,
-            COUNT(*) AS chunks
-        FROM langchain_pg_embedding
-        WHERE cmetadata->>'source' = 'bookstack'
-          AND cmetadata ? 'book_id'
-        GROUP BY cmetadata->>'book_id'
-        ORDER BY MAX(cmetadata->>'indexed_at') DESC
-    """).fetchall()
-
-    return [
-        {"book_id": r.book_id, "book_name": r.book_name, "indexed_at": r.indexed_at, "pages": r.pages, "chunks": r.chunks}
-        for r in rows
-    ]
+    try:
+        rows = db_exec("""
+            SELECT
+                cmetadata->>'book_id' AS book_id,
+                MAX(cmetadata->>'book_name') AS book_name,
+                MAX(cmetadata->>'indexed_at') AS indexed_at,
+                COUNT(DISTINCT cmetadata->>'page_id') AS pages,
+                COUNT(*) AS chunks
+            FROM langchain_pg_embedding
+            WHERE cmetadata->>'source' = 'bookstack'
+              AND cmetadata ? 'book_id'
+            GROUP BY cmetadata->>'book_id'
+            ORDER BY MAX(cmetadata->>'indexed_at') DESC
+        """).fetchall()
+        return [
+            {"book_id": r.book_id, "book_name": r.book_name, "indexed_at": r.indexed_at, "pages": r.pages, "chunks": r.chunks}
+            for r in rows
+        ]
+    except Exception:
+        return []
 
 def get_book_indexed_at(book_id: int) -> str | None:
-    r = db_exec("""
-        SELECT MAX(cmetadata->>'indexed_at') AS indexed_at
-        FROM langchain_pg_embedding
-        WHERE cmetadata->>'source' = 'bookstack'
-          AND cmetadata->>'book_id' = :bid
-    """, {"bid": str(book_id)}).fetchone()
-    return r.indexed_at if r else None
+    try:
+        r = db_exec("""
+            SELECT MAX(cmetadata->>'indexed_at') AS indexed_at
+            FROM langchain_pg_embedding
+            WHERE cmetadata->>'source' = 'bookstack'
+              AND cmetadata->>'book_id' = :bid
+        """, {"bid": str(book_id)}).fetchone()
+        return r.indexed_at if r else None
+    except Exception:
+        return None

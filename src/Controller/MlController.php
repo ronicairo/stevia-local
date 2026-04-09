@@ -46,6 +46,7 @@ class MlController extends AbstractController
         $apiUrl = $this->apiStevia . '/ml/run/' . $step;
 
         return new StreamedResponse(function () use ($apiUrl) {
+            set_time_limit(0);
             $response = $this->client->request('POST', $apiUrl, ['timeout' => 600]);
             foreach ($this->client->stream($response) as $chunk) {
                 echo $chunk->getContent();

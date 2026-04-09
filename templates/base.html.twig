@@ -30,7 +30,7 @@
         <img src="{{ asset('images/logo-assurance-maladie.svg') }}" alt="Assurance Maladie" class="topnav-logo">
         <div class="topnav-brand">
             <span class="topnav-title">SUCRE</span>
-            <span class="topnav-subtitle d-none d-lg-inline">Système Unifié de Contrôle du REcouvrement</span>
+            <span class="topnav-subtitle d-none d-lg-inline">Suivi des créances</span>
         </div>
     </div>
     <div class="topnav-right">
@@ -38,7 +38,7 @@
         <div class="topnav-user-info">
             <i class="bi bi-person-circle topnav-icon"></i>
             <div class="d-none d-md-block">
-                <div class="topnav-username">Agent Martin</div>
+                <div class="topnav-username">Roni Cairo</div>
                 <div class="topnav-role">Gestionnaire recouvrement</div>
             </div>
         </div>
@@ -112,6 +112,7 @@
                         <span>Indexation docs</span>
                     </a>
                 </li>
+            
                 <li class="sidebar-item {{ app.request.attributes.get('_route') == 'stevia_ml' ? 'active' : '' }}">
                     <a href="{{ path('stevia_ml') }}" class="sidebar-link">
                         <i class="bi bi-cpu"></i>
@@ -171,7 +172,7 @@
         <div class="sidebar-footer">
             <i class="bi bi-person-badge sidebar-footer-icon"></i>
             <div>
-                <div class="sidebar-footer-name">Agent Martin</div>
+                <div class="sidebar-footer-name">Roni Cairo</div>
                 <div class="sidebar-footer-role">v2.4.1</div>
             </div>
         </div>
@@ -244,6 +245,7 @@ document.getElementById('sidebarToggle')?.addEventListener('click', () => {
 </script>
 {# Rôle courant exposé au chatbot #}
 <script>window.STEVIA_ROLE = "{{ app.session.get('stevia_role', 'user') }}";</script>
+<script>window.STEVIA_USER = "Roni Cairo";</script>
 {# Stevia widget JS #}
 <script src="{{ asset('js/chatbot.js') }}"></script>
 

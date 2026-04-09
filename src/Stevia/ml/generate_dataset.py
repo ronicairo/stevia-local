@@ -96,16 +96,24 @@ def embed_text(text: str) -> list[float]:
 def generate_question(chunk_text: str) -> str | None:
     """Demande au LLM de formuler une question à partir d'un extrait."""
     prompt = (
-        "Tu es un assistant qui génère des questions de recherche documentaire.\n"
-        "À partir du texte suivant, génère UNE seule question courte et précise en français "
-        "qu'un agent de la CPAM pourrait poser pour trouver cette information.\n"
-        "Réponds uniquement avec la question (pas d'explication, pas de guillemets).\n\n"
-        f"Texte :\n{chunk_text[:600]}\n\nQuestion :"
+        "Tu es un agent de la CPAM Hauts-de-Seine qui utilise l'application SUCRE "
+        "(gestion de suivi de créances).\n"
+        "À partir du texte de documentation SUCRE ci-dessous, génère UNE seule question "
+        "précise en français que tu poserais pour retrouver cette information.\n"
+        "La question doit :\n"
+        "- Utiliser le vocabulaire du texte (noms d'onglets, acronymes, termes métier)\n"
+        "- Être formulée comme une vraie recherche : 'Comment...', 'À quoi sert...', "
+        "'Quand...', 'Quelle est...', 'Comment faire pour...', 'À quelle heure...'\n"
+        "- Être spécifique, pas générale\n"
+        "- Être rédigée en FRANÇAIS obligatoirement\n\n"
+        "Réponds UNIQUEMENT avec la question, sans guillemets ni explication.\n\n"
+        f"Texte :\n{chunk_text[:800]}\n\nQuestion:"
     )
     try:
         resp = requests.post(
             f"http://{OLLAMA_HOST}:11434/api/generate",
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "options": {"temperature": 0.3}},
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False,
+                  "options": {"temperature": 0.6, "num_predict": 80}},
             timeout=45,
         )
         raw = resp.json().get("response", "").strip()

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Query, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import hmac
@@ -11,7 +11,14 @@ import logging
 import logging.handlers
 import os
 import json
+import re
 import requests
+
+# ── Formatter style Monolog ───────────────────────────────────────────────────
+class MonologFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        dt = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+        return f"[{dt}] {record.name}.{record.levelname}: {record.getMessage()}"
 
 # ── Loggers Python (fichiers montés depuis var/log/) ──────────────────────────
 _LOG_DIR = os.getenv("STEVIA_LOG_DIR", "/app/var_log")
@@ -20,13 +27,13 @@ os.makedirs(_LOG_DIR, exist_ok=True)
 stevia_logger = logging.getLogger("stevia")
 stevia_logger.setLevel(logging.INFO)
 _stevia_handler = logging.FileHandler(os.path.join(_LOG_DIR, "stevia.log"))
-_stevia_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+_stevia_handler.setFormatter(MonologFormatter())
 stevia_logger.addHandler(_stevia_handler)
 
 train_logger = logging.getLogger("stevia_entrainement")
 train_logger.setLevel(logging.INFO)
 _train_handler = logging.FileHandler(os.path.join(_LOG_DIR, "stevia-entrainement.log"))
-_train_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+_train_handler.setFormatter(MonologFormatter())
 train_logger.addHandler(_train_handler)
 
 # Désactiver les logs d'accès uvicorn (questions posées, requêtes /health, etc.)
@@ -75,6 +82,7 @@ class FeedbackModel(BaseModel):
     question: str
     answer: str = ""
     feedback: str  # "positive" ou "negative"
+    user: str = "inconnu"
 
 
 
@@ -111,6 +119,12 @@ def init_feedback_table():
 @app.on_event("startup")
 def startup():
     init_feedback_table()
+    # Initialise les tables PGVector (crée langchain_pg_embedding si absente)
+    try:
+        from services.rag_engine import get_vector_store
+        get_vector_store()
+    except Exception as e:
+        stevia_logger.error(f"[Init] PGVector init error: {e}")
 
 
 @app.post("/ask/stream")
@@ -145,7 +159,17 @@ async def receive_feedback(payload: FeedbackModel):
             )
         """, {"label": label, "fv": payload.feedback, "question": payload.question[:500]})
 
-        stevia_logger.info(f"[Feedback] '{payload.question[:60]}...' → {payload.feedback} (label={label})")
+        clean_answer = re.sub(r"⚠️[^\n]*\n\n", "", payload.answer).strip()
+        answer_preview = (clean_answer[:300] + "…") if len(clean_answer) > 300 else clean_answer
+        label_str = "positif" if label == 1 else "négatif"
+        stevia_logger.info(
+            f"Feedback {label_str} "
+            + json.dumps({
+                "user": payload.user,
+                "question": payload.question[:200],
+                "answer": answer_preview,
+            }, ensure_ascii=False)
+        )
 
     except Exception as e:
         stevia_logger.error(f"[Feedback] Erreur mise à jour label : {e}")
