@@ -46,7 +46,7 @@
             <div class="stat-card-body">
                 <div id="statDatasetValue" class="stat-card-value">{{ status.dataset_size ?? '—' }}</div>
                 <div class="stat-card-label">Exemples dataset</div>
-                <small id="statNTrain" class="text-muted">{{ status.n_train ? status.n_train ~ ' en entraînement' : '' }}</small>
+                <small id="statNTrain" class="text-muted">{{ status.n_train is defined and status.n_train ? status.n_train ~ ' en entraînement' : '' }}</small>
             </div>
         </div>
     </div>
@@ -123,6 +123,16 @@
                         </div>
                     </button>
 
+                    <hr class="my-1">
+
+                    <button class="btn btn-outline-danger" id="btnResetML">
+                        <i class="bi bi-trash3 me-2"></i>
+                        <div class="text-start">
+                            <div class="fw-semibold">Remettre à zéro</div>
+                            <small class="text-muted">Supprime le dataset et les modèles</small>
+                        </div>
+                    </button>
+
                 </div>
 
                 <div class="last-retrain-block mt-3 p-2 rounded {{ status.last_retrain_at is defined and status.last_retrain_at ? '' : 'd-none' }}" style="background: #f8f9fa; font-size: 0.75rem; color: #6c757d">
@@ -179,6 +189,25 @@
 
     document.getElementById('btnClearTerminal').addEventListener('click', () => {
         terminal.innerHTML = '<span style="color:#58a6ff">Stevia ML</span> — Terminal effacé.\n';
+    });
+
+    document.getElementById('btnResetML').addEventListener('click', async function () {
+        if (!confirm('Supprimer le dataset et tous les modèles ? Cette action est irréversible.')) return;
+        try {
+            const r = await fetch('/stevia/ml/reset', { method: 'DELETE' });
+            const data = await r.json();
+            terminal.innerHTML = '';
+            appendLine('🗑 Remise à zéro effectuée', '#f85149');
+            if (data.deleted?.length) {
+                appendLine('Fichiers supprimés :', '#6c757d');
+                data.deleted.forEach(f => appendLine('  — ' + f, '#6c757d'));
+            } else {
+                appendLine('Aucun fichier à supprimer.', '#6c757d');
+            }
+            refreshStats();
+        } catch (e) {
+            appendLine('Erreur : ' + e.message, '#f85149');
+        }
     });
 
     async function refreshStats() {

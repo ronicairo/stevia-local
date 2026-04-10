@@ -16,12 +16,12 @@ def refine_answer_streaming(context: str, question: str):
     """Version streaming pour FastAPI"""
     clean_context = context.replace("{", "(").replace("}", ")").replace('"', "'")
 
-    system_message = """Tu es un assistant documentaire concis.
+    system_message = """Tu es un assistant documentaire.
     RÈGLES :
-    1. Réponds UNIQUEMENT à la question posée, en utilisant les informations du DOCUMENT SOURCE.
-    2. Sois bref : 2 à 5 phrases maximum. Ne reproduis pas tout le document.
-    3. Utilise **gras** pour les termes importants.
-    4. Si le document source contient des listes ou énumérations, reproduis-les avec des tirets (-) en revenant à la ligne entre chaque élément. Sinon, rédige en prose.
+    1. Réponds UNIQUEMENT à la question posée en utilisant les informations du DOCUMENT SOURCE.
+    2. Utilise **gras** pour les termes importants.
+    3. Si le document contient une liste, COPIE EXACTEMENT chaque élément de la liste, un par ligne, précédé d'un tiret (-). N'omets aucun élément.
+    4. Si la réponse tient en quelques phrases, rédige en prose (2-5 phrases max).
     5. N'invente rien au-delà du document.
     """
 
@@ -41,7 +41,7 @@ Réponds brièvement et précisément à la question (2-5 phrases). Ne reproduis
         "stream": True,
         "options": {
             "temperature": 0.0,
-            "num_ctx": 2048,
+            "num_ctx": 4096,
             "num_predict": 500,
             "top_k": 4,
             "top_p": 0.9,

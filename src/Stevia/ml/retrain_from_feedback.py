@@ -109,11 +109,13 @@ def retrain() -> dict:
         return {}
 
     X = df[FEATURE_COLS].values
-    y = df["label"].values
+    y = df["label"].values.astype(int)
 
-    # Split 70/30
+    # Split 70/30 (stratifié si chaque classe a au moins 2 membres)
+    min_class_count = min((y == c).sum() for c in set(y))
+    use_stratify = y if min_class_count >= 2 else None
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, stratify=y, random_state=42
+        X, y, test_size=0.3, stratify=use_stratify, random_state=42
     )
 
     # Réentraînement Decision Tree (paramètres optimisés)

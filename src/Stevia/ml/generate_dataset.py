@@ -32,7 +32,7 @@ from extract_features import extract_features
 # ─── Configuration ─────────────────────────────────────────────────────────────
 DB_URL       = os.getenv("DATABASE_URL", "postgresql://stevia:steviapassword@localhost:5432/stevia")
 OLLAMA_HOST  = os.getenv("OLLAMA_HOST", "localhost")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:1b")
+OLLAMA_MODEL = os.getenv("ML_OLLAMA_MODEL", "gemma3:1b")
 DATASET_DIR  = Path(__file__).parent / "dataset"
 
 ENGINE = create_engine(DB_URL, pool_pre_ping=True)
@@ -133,6 +133,7 @@ def build_dataset(max_chunks: int = 100) -> tuple[list[dict], list[int]]:
     print(f"  {len(chunks)} chunks chargés depuis la BDD")
 
     rows_pos, rows_neg = [], []
+    questions_seen: set[str] = set()
 
     for i, chunk in enumerate(chunks):
         source_page_id = (chunk["meta"] or {}).get("page_id", "")
@@ -144,6 +145,14 @@ def build_dataset(max_chunks: int = 100) -> tuple[list[dict], list[int]]:
         if not question:
             print("  ✗ Question non générée, ignoré")
             continue
+
+        # Dédupliquer les questions (normalisées)
+        q_normalized = question.lower().strip()
+        if q_normalized in questions_seen:
+            print(f"  ✗ Question dupliquée, ignorée : {question}")
+            continue
+        questions_seen.add(q_normalized)
+
         print(f"  ✓ Question : {question}")
 
         # 2. Encoder la question
@@ -193,12 +202,27 @@ def save_dataset(rows: list[dict], filename: str = "stevia_relevance_dataset.csv
         return
     DATASET_DIR.mkdir(parents=True, exist_ok=True)
     path = DATASET_DIR / filename
+
+    # Charger les exemples existants et fusionner
+    existing = []
+    if path.exists():
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            existing = list(reader)
+        print(f"  ↺ {len(existing)} exemples existants chargés")
+
+    # Dédupliquer sur la question (normalize)
+    seen_questions = {row["question"].lower().strip() for row in existing if "question" in row}
+    new_rows = [r for r in rows if r.get("question", "").lower().strip() not in seen_questions]
+    print(f"  + {len(new_rows)} nouveaux exemples ajoutés ({len(rows) - len(new_rows)} doublons ignorés)")
+
+    merged = existing + new_rows
     fieldnames = list(rows[0].keys())
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(rows)
-    print(f"  ✓ Dataset sauvegardé : {path} ({len(rows)} lignes)")
+        writer.writerows(merged)
+    print(f"  ✓ Dataset sauvegardé : {path} ({len(merged)} lignes au total)")
 
 
 # ─── Main ──────────────────────────────────────────────────────────────────────

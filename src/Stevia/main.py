@@ -573,6 +573,21 @@ async def ml_run(step: str, request: Request):
     return StreamingResponse(stream_output(), media_type="text/event-stream")
 
 
+@app.delete("/ml/reset")
+def ml_reset():
+    """Supprime le dataset et les modèles pour repartir de zéro."""
+    from pathlib import Path
+    dataset_dir = Path("/app/ml/dataset")
+    deleted = []
+    for filename in ["stevia_relevance_dataset.csv", "best_model.pkl", "model_meta.pkl",
+                     "optimized_random_forest.pkl", "train.csv", "test.csv"]:
+        p = dataset_dir / filename
+        if p.exists():
+            p.unlink()
+            deleted.append(filename)
+    return {"status": "ok", "deleted": deleted}
+
+
 @app.get("/health")
 def health_check():
     return {"status": "online", "message": "Stevia est prête"}

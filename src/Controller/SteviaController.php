@@ -36,10 +36,11 @@ class SteviaController extends AbstractController
 
         return new StreamedResponse(
             function () use ($payload) {
+                set_time_limit(0);
                 try {
                     $response = $this->client->request('POST', $this->apiStevia . '/ask/stream', [
                         'json'   => ['question' => $payload['question'], 'roles' => ['user']],
-                        'timeout' => 60,
+                        'timeout' => 180,
                         'buffer' => false,
                     ]);
 

@@ -40,6 +40,17 @@ class MlController extends AbstractController
         }
     }
 
+    #[Route('/stevia/ml/reset', name: 'stevia_ml_reset', methods: ['DELETE'])]
+    public function reset(): JsonResponse
+    {
+        try {
+            $response = $this->client->request('DELETE', $this->apiStevia . '/ml/reset', ['timeout' => 10]);
+            return new JsonResponse($response->toArray(false));
+        } catch (\Exception $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
     #[Route('/stevia/ml/run/{step}', name: 'stevia_ml_run', methods: ['POST'])]
     public function run(string $step): StreamedResponse
     {
