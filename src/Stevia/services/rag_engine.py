@@ -166,7 +166,7 @@ def filter_off_topic(best_score: float, second_score: float) -> str | None:
 def build_context(docs_with_scores: list, best_page_id: str, search_keywords: list[str]) -> tuple[str, list[str], dict]:
     """Construit le contexte à partir des chunks de la meilleure page."""
 
-    # Filtre les docs de la même page
+    # Chunks de la page déjà dans les résultats vectoriels
     same_page_docs = [doc for doc, score, roles in docs_with_scores if doc.metadata.get("page_id") == best_page_id]
 
     # Fonction de scoring pour prioriser les chunks avec mots-clés adjacents
@@ -178,8 +178,28 @@ def build_context(docs_with_scores: list, best_page_id: str, search_keywords: li
 
     same_page_docs = sorted(same_page_docs, key=count_keyword_matches, reverse=True)
 
-    max_chars_per_doc = 2000
-    max_total_chars = 4000
+    # Si le meilleur chunk se termine par une liste tronquée (finit sur "•"),
+    # chercher en base le chunk de continuation de la même page
+    if same_page_docs and same_page_docs[0].page_content.rstrip().endswith("•"):
+        try:
+            already_ids = {doc.page_content[:80] for doc in same_page_docs}
+            extra_rows = db_exec("""
+                SELECT document, cmetadata
+                FROM langchain_pg_embedding
+                WHERE cmetadata->>'page_id' = :pid
+                  AND cmetadata->>'source' = 'bookstack'
+                  AND document LIKE '•%'
+            """, {"pid": str(best_page_id)}).fetchall()
+            for row in extra_rows:
+                if row.document[:80] not in already_ids:
+                    meta = row.cmetadata if isinstance(row.cmetadata, dict) else {}
+                    # Insérer juste après le meilleur chunk
+                    same_page_docs.insert(1, LCDocument(page_content=row.document, metadata=meta))
+        except Exception:
+            pass
+
+    max_chars_per_doc = 3000
+    max_total_chars = 5000
 
     context_parts = []
     all_images = []
