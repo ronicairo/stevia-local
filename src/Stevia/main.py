@@ -575,7 +575,7 @@ async def ml_run(step: str, request: Request):
 
 @app.delete("/ml/reset")
 def ml_reset():
-    """Supprime le dataset et les modèles pour repartir de zéro."""
+    """Supprime dataset, modèles et feedbacks ML pour repartir de zéro."""
     from pathlib import Path
     dataset_dir = Path("/app/ml/dataset")
     deleted = []
@@ -585,7 +585,21 @@ def ml_reset():
         if p.exists():
             p.unlink()
             deleted.append(filename)
-    return {"status": "ok", "deleted": deleted}
+
+    feedback_deleted = 0
+    try:
+        result = db_exec("DELETE FROM stevia_ml_feedback")
+        feedback_deleted = result.rowcount or 0
+    except Exception as e:
+        stevia_logger.error(f"[ML Reset] Erreur suppression feedbacks : {e}")
+        return {
+            "status": "error",
+            "message": "Fichiers ML supprimés, mais impossible de purger les feedbacks.",
+            "deleted": deleted,
+            "feedback_deleted": feedback_deleted,
+        }
+
+    return {"status": "ok", "deleted": deleted, "feedback_deleted": feedback_deleted}
 
 
 @app.get("/health")
