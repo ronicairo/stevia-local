@@ -209,7 +209,7 @@ def build_context(docs_with_scores: list, best_page_id: str, search_keywords: li
     best_metadata = same_page_docs[0].metadata if same_page_docs else {}
     best_title = best_metadata.get("title", "Inconnu")
 
-    for doc in same_page_docs:
+    for i, doc in enumerate(same_page_docs):
         content = " ".join(doc.page_content[:max_chars_per_doc].split())
         content_hash = hash(content[:100])
 
@@ -223,15 +223,17 @@ def build_context(docs_with_scores: list, best_page_id: str, search_keywords: li
         context_parts.append(content)
         total_chars += len(content)
 
-        images_str = doc.metadata.get("images", "")
-        if images_str:
-            for img_url in images_str.split(","):
-                img_url = img_url.strip()
-                if img_url and img_url not in seen_images:
-                    seen_images.add(img_url)
-                    all_images.append(img_url)
+        # Images uniquement du chunk le plus pertinent (i==0)
+        if i == 0:
+            images_str = doc.metadata.get("images", "")
+            if images_str:
+                for img_url in images_str.split(","):
+                    img_url = img_url.strip()
+                    if img_url and img_url not in seen_images:
+                        seen_images.add(img_url)
+                        all_images.append(img_url)
 
-    all_images = all_images[:2]
+    all_images = all_images[:1]
     context = f"[Source: {best_title}]\n\n" + "\n\n".join(context_parts)
 
     return context, all_images, best_metadata
