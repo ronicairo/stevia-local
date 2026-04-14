@@ -18,9 +18,9 @@ G='\033[0;32m' Y='\033[1;33m' R='\033[0;31m' N='\033[0m'
 set -a && source "$STEVIA_ENV_FILE" && set +a
 : "${BOOKSTACK_URL:?}" "${BOOKSTACK_TOKEN_ID:?}" "${BOOKSTACK_TOKEN_SECRET:?}"
 : "${OLLAMA_MODEL:?}" "${OLLAMA_HOST:?}"
-: "${PROXY_URL:?}" "${NO_PROXY_LIST:?}"
-: "${POSTGRES_USER:?}" "${POSTGRES_PASSWORD:?}" "${POSTGRES_DB:?}"
 : "${TMPDIR:?}"
+PROXY_URL="${PROXY_URL:-}"
+NO_PROXY_LIST="${NO_PROXY_LIST:-}"
 export TMPDIR
 mkdir -p "$TMPDIR"
 echo -e "${G}✅ Variables chargées${N}"
