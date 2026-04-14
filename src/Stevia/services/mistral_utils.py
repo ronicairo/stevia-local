@@ -17,12 +17,13 @@ def refine_answer_streaming(context: str, question: str):
     clean_context = context.replace("{", "(").replace("}", ")").replace('"', "'")
 
     system_message = """Tu es un assistant documentaire.
-    RÈGLES :
-    1. Réponds UNIQUEMENT à la question posée en utilisant les informations du DOCUMENT SOURCE.
-    2. Utilise **gras** pour les termes importants.
-    3. Si le document contient une liste, COPIE EXACTEMENT chaque élément de la liste, un par ligne, précédé d'un tiret (-). N'omets aucun élément.
-    4. Si la réponse tient en quelques phrases, rédige en prose (2-5 phrases max).
-    5. N'invente rien au-delà du document.
+    RÈGLES ABSOLUES :
+    1. Réponds UNIQUEMENT avec les informations EXACTES du DOCUMENT SOURCE et n'invente pas des explications qui ne sont pas dans le document.
+    2. COPIE EXACTEMENT les listes et énumérations telles qu'elles apparaissent.
+    3. INTERDICTION TOTALE d'inventer ou développer.
+    4. Si un acronyme apparaît dans le document, utilise-le tel quel SANS l'expliquer.
+    5. NE JAMAIS inventer ni ajouter une explication (acronyme..) non présente dans la documentation.
+    6. Enjoliver l'affichage de la réponse avec des sauts de ligne, listes à puces quand il y en a dans le contexte ..
     """
 
     user_message = f"""DOCUMENT SOURCE :
@@ -90,5 +91,7 @@ Réponds brièvement et précisément à la question (2-5 phrases). Ne reproduis
                             yield buffer
                         break
 
+    except requests.exceptions.ConnectionError:
+        yield "⚠️ Le service de chat est disponible du lundi au vendredi de 7h30 à 18h30."
     except Exception:
         yield "Erreur lors de la génération."

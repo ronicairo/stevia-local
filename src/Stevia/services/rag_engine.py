@@ -213,7 +213,9 @@ def build_context(docs_with_scores: list, best_page_id: str, search_keywords: li
     best_title = best_metadata.get("title", "Inconnu")
 
     for i, doc in enumerate(same_page_docs):
-        content = " ".join(doc.page_content[:max_chars_per_doc].split())
+        content = "\n".join(
+            " ".join(line.split()) for line in doc.page_content[:max_chars_per_doc].splitlines()
+        )
         content_hash = hash(content[:100])
 
         if content_hash in seen_content:
