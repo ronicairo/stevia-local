@@ -25,3 +25,6 @@ __pycache__/
 *.pyc
 *.pyo
 ###< Stevia ###
+STEVIA-PROD/
+MEMOIRE-STEVIA/
+DOC-BOOKSTACK-HTML/

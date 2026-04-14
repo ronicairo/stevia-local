@@ -41,7 +41,7 @@ Réponds brièvement et précisément à la question (2-5 phrases). Ne reproduis
         "stream": True,
         "options": {
             "temperature": 0.0,
-            "num_ctx": 4096,
+            "num_ctx": 2048,
             "num_predict": 500,
             "top_k": 4,
             "top_p": 0.9,
