@@ -35,7 +35,7 @@ if [[ "$REBUILD" == false ]]; then
   echo -e "${Y}⚡ Copie du code Python...${N}"
   podman cp services/  stevia-container:/app/services/
   podman cp main.py    stevia-container:/app/main.py
-  [[ -d ml ]] && podman cp ml/ stevia-container:/app/ml/ || true
+  # ml/ est un volume monté (docker-compose) — pas besoin de podman cp
 
   echo -e "${Y}🔄 Restart stevia-container...${N}"
   podman restart stevia-container
