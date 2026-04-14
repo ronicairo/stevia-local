@@ -4,15 +4,6 @@ Répertoire de travail principal : `stevia-local/`
 
 ---
 
-## Prérequis
-
-- Podman + podman-compose installés
-- PHP 8.2+, Composer
-- Symfony CLI (`symfony serve`)
-- Node.js + npm (optionnel, pour webpack)
-
----
-
 ## 1. Démarrer les conteneurs
 
 **Depuis : `stevia-local/`**
@@ -74,19 +65,22 @@ SQL
 3. Aller dans **Profil → API Tokens → Create Token**
 4. Copier le `Token ID` et le `Token Secret`
 
-Mettre à jour les tokens dans `.env` et redémarrer le conteneur :
+Mettre à jour `src/Stevia/.env` :
 
-**Depuis : `stevia-local/`**
+```
+BOOKSTACK_TOKEN_ID=<TOKEN_ID>
+BOOKSTACK_TOKEN_SECRET=<TOKEN_SECRET>
+```
+
+Puis recréer le container pour qu'il lise le nouveau `.env` :
 
 ```bash
-./update-tokens.sh <TOKEN_ID> <TOKEN_SECRET>
+podman-compose up -d --force-recreate stevia-api
 ```
 
 ---
 
 ## 4. Télécharger le modèle LLM (première fois uniquement)
-
-**Depuis : n'importe où**
 
 ```bash
 podman exec ollama ollama pull gemma3:1b
@@ -100,21 +94,7 @@ podman exec ollama ollama list
 
 ---
 
-## 5. Installer les dépendances Python ML (si nécessaire)
-
-Si scikit-learn n'est pas installé dans le conteneur :
-
-**Depuis : n'importe où**
-
-```bash
-podman exec stevia-container pip install scikit-learn pandas joblib
-```
-
-> Note : Ces paquets sont déjà dans `sucre-source/Stevia/requirements.txt` depuis la dernière mise à jour. Un rebuild de l'image les inclura automatiquement.
-
----
-
-## 6. Démarrer Symfony
+## 5. Démarrer Symfony
 
 **Depuis : `stevia-local/`**
 
@@ -127,56 +107,84 @@ Accéder à l'application : **http://localhost:8000**
 
 ---
 
-## 7. Pipeline ML — Entraîner le classifieur de pertinence
-
-A effectuer dans l'ordre, **depuis n'importe où** (les commandes s'exécutent dans le conteneur) :
-
-### Étape 1 — Générer le dataset
-
-```bash
-podman exec stevia-container python /app/ml/generate_dataset.py
-```
-
-Génère `stevia-api/ml/dataset/stevia_relevance_dataset.csv`
-Durée : 2-10 minutes selon le nombre de pages indexées.
-
-### Étape 2 — Entraîner les modèles
-
-```bash
-podman exec stevia-container python /app/ml/train_model.py
-```
-
-Compare RandomForest, KNN, DecisionTree, LogisticRegression.
-Sauvegarde le meilleur dans `stevia-api/ml/dataset/best_model.pkl`.
-
-### Étape 3 — Optimiser les hyperparamètres (optionnel)
-
-```bash
-podman exec stevia-container python /app/ml/optimize_model.py --model random_forest
-```
-
-Options `--model` : `random_forest`, `decision_tree`, `knn`, `logistic`
-
-### Étape 4 — Évaluation finale
-
-```bash
-podman exec stevia-container python /app/ml/evaluate_model.py
-```
-
-Affiche : rapport de classification, matrice de confusion, AUC-ROC, importance des features.
-
-> Une fois `best_model.pkl` présent, le pipeline RAG l'utilise automatiquement à la prochaine requête.
-
----
-
-## 8. Indexer les livres BookStack
+## 6. Indexer les livres BookStack
 
 Via l'interface web : **http://localhost:8000/stevia/indexation**
 
-Ou via curl :
+---
+
+## 7. Mettre à jour le code Python (rag_engine, mistral_utils, bookstack_reader…)
+
+**Depuis : `stevia-local/src/Stevia/`**
 
 ```bash
-curl -X POST http://localhost:8000/stevia/index/book/<BOOK_ID>
+./update_stevia.sh
+```
+
+Copie les fichiers Python dans le container et redémarre l'API (~10s).
+
+> Si tu as modifié `requirements.txt` ou le `Dockerfile`, utilise le rebuild complet :
+> ```bash
+> ./update_stevia.sh --rebuild
+> ```
+
+---
+
+## 8. Changer le modèle Ollama
+
+Modifier `src/Stevia/.env` :
+
+```
+OLLAMA_MODEL=gemma3:1b
+```
+
+Puis **recréer** le container (un simple restart ne relit pas le `.env`) :
+
+```bash
+podman-compose up -d --force-recreate stevia-api
+```
+
+> `podman restart stevia-container` conserve les anciennes variables — toujours utiliser `--force-recreate` pour changer le modèle.
+
+---
+
+## 9. Planning Ollama (lun–ven, 7h30–18h30)
+
+Les cron jobs sont déjà installés. Ollama démarre automatiquement à 7h30 et s'arrête à 18h30.
+
+Pour gérer manuellement :
+
+```bash
+# Démarrer Ollama + précharger le modèle
+./ollama_start.sh
+
+# Arrêter Ollama + décharger le modèle
+./ollama_stop.sh
+
+# Décharger le modèle sans stopper Ollama (libère ~6 GB de RAM)
+curl -s http://127.0.0.1:11434/api/generate -d '{"model":"gemma3:1b","keep_alive":0}' > /dev/null
+```
+
+Logs des cron jobs : `/tmp/ollama_cron.log`
+
+---
+
+## 10. Pipeline ML — Entraîner le classifieur de pertinence
+
+A effectuer dans l'ordre, **depuis n'importe où** :
+
+```bash
+# Générer le dataset
+podman exec stevia-container python /app/ml/generate_dataset.py
+
+# Entraîner les modèles
+podman exec stevia-container python /app/ml/train_model.py
+
+# Optimiser les hyperparamètres (optionnel)
+podman exec stevia-container python /app/ml/optimize_model.py --model random_forest
+
+# Évaluation finale
+podman exec stevia-container python /app/ml/evaluate_model.py
 ```
 
 ---
@@ -199,18 +207,15 @@ curl -X POST http://localhost:8000/stevia/index/book/<BOOK_ID>
 # Logs du conteneur Stevia
 podman logs -f stevia-container
 
-# Redémarrer uniquement Stevia (après modif rag_engine.py)
-podman restart stevia-container
-
-# Reconstruire l'image Stevia (après modif requirements.txt ou Dockerfile)
-podman-compose build --no-cache stevia-api && podman-compose up -d stevia-api
-
 # Accéder à psql
 podman exec -it postgres-stevia psql -U stevia -d stevia
 
 # Vérifier les chunks indexés
 podman exec -it postgres-stevia psql -U stevia -d stevia \
   -c "SELECT cmetadata->>'book_name', COUNT(*) FROM langchain_pg_embedding GROUP BY 1;"
+
+# RAM utilisée par container
+podman stats --no-stream
 
 # Arrêter toute la stack
 podman-compose down
