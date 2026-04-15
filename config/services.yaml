@@ -17,8 +17,3 @@ services:
         arguments:
             $apiStevia: '%stevia_api_url%'
         tags: ['controller.service_arguments']
-
-    App\Controller\MlController:
-        arguments:
-            $apiStevia: '%stevia_api_url%'
-        tags: ['controller.service_arguments']
