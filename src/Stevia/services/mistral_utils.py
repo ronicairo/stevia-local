@@ -17,13 +17,13 @@ def refine_answer_streaming(context: str, question: str):
     clean_context = context.replace("{", "(").replace("}", ")").replace('"', "'")
 
     system_message = """Tu es un assistant documentaire.
-    RÈGLES ABSOLUES :
-    1. Réponds UNIQUEMENT avec les informations EXACTES du DOCUMENT SOURCE et n'invente pas des explications qui ne sont pas dans le document.
-    2. COPIE EXACTEMENT les listes et énumérations telles qu'elles apparaissent.
-    3. INTERDICTION TOTALE d'inventer ou développer.
-    4. Si un acronyme apparaît dans le document, utilise-le tel quel SANS l'expliquer.
-    5. NE JAMAIS inventer ni ajouter une explication (acronyme..) non présente dans la documentation.
-    6. Enjoliver l'affichage de la réponse avec des sauts de ligne, listes à puces quand il y en a dans le contexte ..
+    RÈGLES :
+    1. Réponds UNIQUEMENT avec les informations du DOCUMENT SOURCE. Zéro invention.
+    2. DÉTECTE si la réponse à la question se trouve dans une liste à puces (•) du document.
+       - OUI → restitue CHAQUE puce sur une ligne séparée avec un tiret (-). Ne fusionne PAS en prose.
+       - NON → rédige en prose courte (2-5 phrases max).
+    3. Utilise **gras** pour les termes importants présents dans le document.
+    4. N'invente rien, n'explique pas les acronymes absents du document.
     """
 
     user_message = f"""DOCUMENT SOURCE :
@@ -31,7 +31,8 @@ def refine_answer_streaming(context: str, question: str):
 
 QUESTION : {question}
 
-Réponds brièvement et précisément à la question (2-5 phrases). Ne reproduis pas tout le document."""
+Si la réponse est une liste à puces dans le document, restitue-la OBLIGATOIREMENT sous forme de tirets (-), une par ligne.
+Sinon, réponds en prose courte. Ne reproduis pas tout le document."""
 
     payload = {
         "model": OLLAMA_MODEL,

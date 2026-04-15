@@ -31,16 +31,18 @@ services:
       retries: 5
 
   # -----------------------------------------------------------
-  # 2. Ollama — inférence LLM locale (gemma3:1b)
+  # 2. Ollama — inférence LLM
+  #    LOCAL : commenté — Ollama tourne nativement sur macOS (GPU M5)
+  #    PROD  : décommenter ce bloc pour Ollama en conteneur
   # -----------------------------------------------------------
-  ollama:
-    image: ollama/ollama
-    container_name: ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
+  # ollama:
+  #   image: ollama/ollama
+  #   container_name: ollama
+  #   restart: unless-stopped
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
 
   # -----------------------------------------------------------
   # 3. BookStack — documentation source (port 8080)

@@ -178,28 +178,7 @@ def build_context(docs_with_scores: list, best_page_id: str, search_keywords: li
 
     same_page_docs = sorted(same_page_docs, key=count_keyword_matches, reverse=True)
 
-    # Si le meilleur chunk se termine dans une liste (dernière ligne = puce),
-    # chercher en base les chunks de continuation de la même page
-    last_line = next((l for l in reversed(same_page_docs[0].page_content.splitlines()) if l.strip()), "") if same_page_docs else ""
-    if same_page_docs and (
-        same_page_docs[0].page_content.rstrip().endswith("•") or
-        last_line.strip().startswith("• ")
-    ):
-        try:
-            already_ids = {doc.page_content[:80] for doc in same_page_docs}
-            extra_rows = db_exec("""
-                SELECT document, cmetadata
-                FROM langchain_pg_embedding
-                WHERE cmetadata->>'page_id' = :pid
-                  AND cmetadata->>'source' = 'bookstack'
-                  AND document LIKE '•%'
-            """, {"pid": str(best_page_id)}).fetchall()
-            for row in extra_rows:
-                if row.document[:80] not in already_ids:
-                    meta = row.cmetadata if isinstance(row.cmetadata, dict) else {}
-                    same_page_docs.insert(1, LCDocument(page_content=row.document, metadata=meta))
-        except Exception:
-            pass
+    # (les listes de puces sont désormais fusionnées à l'indexation via _merge_bullet_chunks)
 
     max_chars_per_doc = 3000
     max_total_chars = 5000

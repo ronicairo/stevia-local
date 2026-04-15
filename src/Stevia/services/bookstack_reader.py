@@ -17,6 +17,9 @@ def clean_html(html: str) -> str:
     html = re.sub(r'<h3[^>]*>(.*?)</h3>', r'\n\n### \1\n\n', html, flags=re.DOTALL)
     html = re.sub(r'<h4[^>]*>(.*?)</h4>', r'\n\n#### \1\n\n', html, flags=re.DOTALL)
 
+    # Préserve le gras en markdown
+    html = re.sub(r'<(?:strong|b)[^>]*>(.*?)</(?:strong|b)>', r'**\1**', html, flags=re.IGNORECASE | re.DOTALL)
+
     # Préserve les listes numérotées
     html = re.sub(r'<li[^>]*>\s*(\d+\.?\s*)', r'\n\1 ', html)
     html = re.sub(r'<li[^>]*>', r'\n• ', html)
@@ -139,6 +142,32 @@ def extract_roles_from_tags(tags: list) -> list:
     return roles
 
 
+def _merge_bullet_chunks(docs: list[LCDocument]) -> list[LCDocument]:
+    """Fusionne les chunks qui coupent une liste de puces."""
+    if len(docs) <= 1:
+        return docs
+
+    merged = []
+    i = 0
+    while i < len(docs):
+        chunk = docs[i]
+        lines = [l for l in chunk.page_content.splitlines() if l.strip()]
+        last_line = lines[-1] if lines else ""
+
+        last_stripped = last_line.strip()
+        if (last_stripped.startswith("• ") or last_stripped == "•") and i + 1 < len(docs):
+            next_chunk = docs[i + 1]
+            merged_content = chunk.page_content.rstrip() + "\n" + next_chunk.page_content.lstrip()
+            merged_doc = LCDocument(page_content=merged_content, metadata=chunk.metadata)
+            merged.append(merged_doc)
+            i += 2
+        else:
+            merged.append(chunk)
+            i += 1
+
+    return merged
+
+
 def parse_bookstack_page(page: dict, book_name: str = None, book_slug: str = None, book_tags: list = None) -> list[LCDocument]:
     """Parse une page BookStack et retourne une liste de documents LangChain."""
 
@@ -192,6 +221,7 @@ def parse_bookstack_page(page: dict, book_name: str = None, book_slug: str = Non
     )
 
     docs = text_splitter.split_documents([doc])
+    docs = _merge_bullet_chunks(docs)
 
     for chunk_doc in docs:
         chunk_text = chunk_doc.page_content.lower()
