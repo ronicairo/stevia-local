@@ -1,14 +1,16 @@
 #!/bin/bash
 
 # ================================================================
-#  STEVIA - START STACK (PGVector + Ollama + FastAPI)
+#  STEVIA - START LOCAL (podman-compose + Python natif + Ollama macOS)
 # ================================================================
 
 set -euo pipefail
 
-STEVIA_ENV_FILE="$(pwd)/.env"
+STEVIA_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$STEVIA_DIR/../.." && pwd)"
+COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
+STEVIA_ENV_FILE="$STEVIA_DIR/.env"
 
-# Couleurs
 G='\033[0;32m' Y='\033[1;33m' R='\033[0;31m' N='\033[0m'
 
 # ================================================================
@@ -19,102 +21,105 @@ set -a && source "$STEVIA_ENV_FILE" && set +a
 : "${BOOKSTACK_URL:?}" "${BOOKSTACK_TOKEN_ID:?}" "${BOOKSTACK_TOKEN_SECRET:?}"
 : "${OLLAMA_MODEL:?}" "${OLLAMA_HOST:?}"
 : "${TMPDIR:?}"
-PROXY_URL="${PROXY_URL:-}"
-NO_PROXY_LIST="${NO_PROXY_LIST:-}"
-export TMPDIR
+
 mkdir -p "$TMPDIR"
+mkdir -p "${STEVIA_LOG_DIR:-/tmp/stevia/logs}"
 echo -e "${G}✅ Variables chargées${N}"
 
 # ================================================================
-#  VÉRIFICATIONS
+#  PODMAN
 # ================================================================
-GRAPHROOT=$(podman info --format '{{.Store.GraphRoot}}' 2>/dev/null || echo "")
-[[ "$GRAPHROOT" != "/app/stevia_work/containers" ]] && echo -e "${R}❌ Podman mal configuré${N}" && exit 1
-
-SPACE=$(df -BG /app | tail -1 | awk '{print $4}' | sed 's/G//')
-[[ "$SPACE" -lt 3 ]] && echo -e "${R}❌ Espace insuffisant (${SPACE}GB)${N}" && exit 1
-
-# ================================================================
-#  NETTOYAGE
-# ================================================================
-echo -e "${Y}🧹 Nettoyage...${N}"
-podman rm -f stevia-container postgres_db ollama 2>/dev/null || true
-podman image prune -f >/dev/null 2>&1 || true
-
-# ================================================================
-#  POSTGRESQL
-# ================================================================
-echo -e "${Y}🗄️ PostgreSQL...${N}"
-podman run -d --name postgres_db --replace --restart always --network host \
-  -e POSTGRES_USER="$POSTGRES_USER" \
-  -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
-  -e POSTGRES_DB="$POSTGRES_DB" \
-  -v stevia_pgdata:/var/lib/postgresql/data \
-  docker.io/pgvector/pgvector:pg16
-
-for i in {1..15}; do
-  podman exec postgres_db pg_isready -U "$POSTGRES_USER" >/dev/null 2>&1 && break
-  sleep 1
-done
-podman exec postgres_db pg_isready -U "$POSTGRES_USER" >/dev/null 2>&1 || { echo -e "${R}❌ PostgreSQL KO${N}"; exit 1; }
-echo -e "${G}✅ PostgreSQL OK${N}"
+if ! podman info >/dev/null 2>&1; then
+  echo -e "${Y}🔧 Démarrage machine Podman...${N}"
+  podman machine start 2>/dev/null || true
+  podman info >/dev/null 2>&1 || { echo -e "${R}❌ Podman non disponible${N}"; exit 1; }
+fi
 
 # ================================================================
 #  OLLAMA
 # ================================================================
-echo -e "${Y}🧠 Ollama...${N}"
-podman run -d --name ollama --replace --restart always --network host \
-  -e HTTP_PROXY="$PROXY_URL" -e HTTPS_PROXY="$PROXY_URL" -e NO_PROXY="$NO_PROXY_LIST" \
-  -e OLLAMA_INSECURE="true" \
-  -v ollama_data:/root/.ollama \
-  docker.io/ollama/ollama:latest
+if curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1; then
+  echo -e "${G}✅ Ollama déjà actif${N}"
+else
+  echo -e "${Y}🧠 Démarrage Ollama...${N}"
+  ollama serve >/dev/null 2>&1 &
+  for i in {1..15}; do
+    curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1 && break
+    sleep 1
+  done
+  curl -s --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1 \
+    || { echo -e "${R}❌ Ollama KO${N}"; exit 1; }
+  echo -e "${G}✅ Ollama démarré${N}"
+fi
 
-for i in {1..15}; do
-  curl -s --max-time 2 http://"$OLLAMA_HOST":11434/api/tags >/dev/null 2>&1 && break
+if ! ollama list 2>/dev/null | grep -q "${OLLAMA_MODEL}"; then
+  echo -e "${Y}📥 Téléchargement modèle ${OLLAMA_MODEL}...${N}"
+  ollama pull "${OLLAMA_MODEL}"
+else
+  echo -e "${G}✅ Modèle ${OLLAMA_MODEL} déjà présent${N}"
+fi
+
+# ================================================================
+#  POSTGRESQL + BOOKSTACK
+# ================================================================
+echo -e "${Y}🗄️ Démarrage PostgreSQL + BookStack...${N}"
+start_container() {
+  local name=$1
+  if podman ps --format '{{.Names}}' | grep -q "^${name}$"; then
+    echo -e "${G}✅ ${name} déjà actif${N}"
+  elif podman ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
+    podman start "$name" >/dev/null
+    echo -e "${G}✅ ${name} redémarré${N}"
+  else
+    return 1
+  fi
+}
+
+# Si les conteneurs n'existent pas encore, les créer via podman-compose
+if ! podman ps -a --format '{{.Names}}' | grep -q "^postgres-stevia$"; then
+  podman-compose -f "$COMPOSE_FILE" up -d postgres bookstack-db bookstack
+else
+  start_container bookstack-db
+  start_container bookstack
+  start_container postgres-stevia
+fi
+
+# Attente PostgreSQL
+for i in {1..20}; do
+  podman exec postgres-stevia pg_isready -U stevia >/dev/null 2>&1 && break
   sleep 1
 done
-curl -s --max-time 2 http://"$OLLAMA_HOST":11434/api/tags >/dev/null 2>&1 || { echo -e "${R}❌ Ollama KO${N}"; exit 1; }
-echo -e "${G}✅ Ollama OK${N}"
+podman exec postgres-stevia pg_isready -U stevia >/dev/null 2>&1 \
+  || { echo -e "${R}❌ PostgreSQL KO${N}"; exit 1; }
+echo -e "${G}✅ PostgreSQL OK${N}"
 
-# Modèle (télécharge seulement si absent)
-if ! podman exec ollama ollama list | grep -q "${OLLAMA_MODEL}"; then
-  echo -e "${Y}📥 Téléchargement modèle...${N}"
-  podman exec ollama ollama pull "${OLLAMA_MODEL}"
-fi
-# Préchargement rapide
-curl -s http://"$OLLAMA_HOST":11434/api/generate -d "{\"model\":\"${OLLAMA_MODEL}\",\"prompt\":\"\",\"keep_alive\":\"10m\"}" >/dev/null &
-echo -e "${G}✅ Modèle prêt${N}"
-
-# ================================================================
-#  BUILD & RUN STEVIA
-# ================================================================
-echo -e "${Y}🏗️ Build Stevia...${N}"
-podman build --network host \
-  --build-arg HTTP_PROXY="$PROXY_URL" --build-arg HTTPS_PROXY="$PROXY_URL" --build-arg NO_PROXY="$NO_PROXY_LIST" \
-  -t stevia-python . 2>&1 | grep -E "(STEP|COMMIT|Successfully)" || true
-
-echo -e "${Y}🚀 Lancement Stevia...${N}"
-podman run -d --name stevia-container --replace --restart always --network host \
-  -e TZ="Europe/Paris" \
-  -e HTTP_PROXY="$PROXY_URL" -e HTTPS_PROXY="$PROXY_URL" -e NO_PROXY="$NO_PROXY_LIST" \
-  -e OLLAMA_HOST="$OLLAMA_HOST" \
-  -e OLLAMA_MODEL="$OLLAMA_MODEL" \
-  -e DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${OLLAMA_HOST}:5432/${POSTGRES_DB}" \
-  -e BOOKSTACK_URL="$BOOKSTACK_URL" \
-  -e BOOKSTACK_TOKEN_ID="$BOOKSTACK_TOKEN_ID" \
-  -e BOOKSTACK_TOKEN_SECRET="$BOOKSTACK_TOKEN_SECRET" \
-  localhost/stevia-python:latest
+# Attente BookStack
+for i in {1..30}; do
+  curl -s --max-time 2 http://localhost:8080 >/dev/null 2>&1 && break
+  sleep 2
+done
+curl -s --max-time 2 http://localhost:8080 >/dev/null 2>&1 \
+  && echo -e "${G}✅ BookStack OK${N}" \
+  || echo -e "${Y}⚠️  BookStack pas encore prêt (normal au 1er démarrage)${N}"
 
 # ================================================================
-#  FIN
+#  DÉPENDANCES PYTHON
 # ================================================================
-sleep 3
+echo -e "${Y}📦 Vérification dépendances Python...${N}"
+cd "$STEVIA_DIR"
+pip install -q -r requirements.txt
+echo -e "${G}✅ Dépendances OK${N}"
+
+# ================================================================
+#  LANCEMENT FASTAPI
+# ================================================================
 echo ""
 echo -e "${G}══════════════════════════════════════════${N}"
 echo -e "${G}  ✅ STEVIA DÉMARRÉE${N}"
+echo -e "${G}  → API      : http://127.0.0.1:8001${N}"
+echo -e "${G}  → Health   : http://127.0.0.1:8001/health${N}"
+echo -e "${G}  → BookStack: http://localhost:8080${N}"
 echo -e "${G}══════════════════════════════════════════${N}"
-podman ps --format "table {{.Names}}\t{{.Status}}" | grep -E "(postgres|ollama|stevia)"
 echo ""
-echo -e "${Y}📜 Logs en direct (Ctrl+C pour quitter) :${N}"
-echo ""
-podman logs -f stevia-container
+
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload

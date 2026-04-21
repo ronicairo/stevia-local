@@ -1,35 +1,13 @@
-# 🍃 Stevia
+# Stevia — Version locale (démo jury)
 
-Chatbot documentaire intégré à **SUCRE** (application interne CPAM Hauts-de-Seine).  
+Chatbot documentaire intégré à **SUCRE**.
 Stevia permet aux agents de consulter la documentation interne via une interface conversationnelle basée sur un pipeline RAG (*Retrieval-Augmented Generation*).
 
----
-
-## 📁 Emplacement dans le projet
-
-```
-SUCRE/
-└── src/
-    └── Stevia/
-        ├── services/
-        │   ├── bookstack_reader.py   # Récupération des pages BookStack
-        │   ├── mistral_utils.py      # Appels LLM via Ollama
-        │   ├── rag_engine.py         # Pipeline RAG (recherche vectorielle + mots-clés)
-        │   └── synonymes.py          # Gestion des synonymes métier
-        ├── main.py                   # API FastAPI (point d'entrée)
-        ├── Dockerfile
-        ├── requirements.txt
-        ├── .env                      # Variables d'environnement (non versionné)
-        ├── .env.example              # Template de configuration
-        ├── start_stevia.sh           # Démarrage complet de la stack
-        ├── reload_stevia.sh          # Rechargement sans rebuild
-        ├── update_stevia.sh          # Mise à jour (pull modèle, rebuild)
-        └── cleanup_and_reconfigure.sh
-```
+> Version locale macOS pour démonstration. Pour la version production CPAM, voir `STEVIA-PROD/`.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 SUCRE (Symfony)
@@ -42,61 +20,82 @@ SUCRE (Symfony)
             │     ├── Recherche vectorielle  →  PostgreSQL + pgvector
             │     └── Recherche mots-clés    →  SQL ILIKE + NLTK
             │
-            ├── Ollama  →  LLM local (qwen3.5:0.8b)
-            └── BookStack API  →  Source documentaire
+            ├── ML — classifieur de pertinence (Decision Tree)
+            │     ├── Feedback utilisateur   →  stevia_ml_feedback (BDD)
+            │     └── Réentraînement         →  interface admin /stevia/ml
+            │
+            ├── Ollama natif macOS (GPU Metal)
+            └── BookStack  →  source documentaire
 ```
 
 ---
 
-## ⚙️ Prérequis
+## Structure
 
-- **Podman** (rootless, configuré avec `GraphRoot=/app/stevia_work/containers`)
-- **Linux** — déployé sur `l11920173dev`
-- Accès réseau à **BookStack** (`l11920175dev.cpam-hauts-de-seine.ramage:8080`)
-- Proxy réseau : `127.0.0.1:3128`
-- Espace disque disponible : **minimum 3 GB** sur `/app`
+```
+src/Stevia/
+├── main.py                      ← API FastAPI
+├── Dockerfile
+├── requirements.txt
+├── compose.yaml                 ← PostgreSQL + BookStack
+├── .env                         ← à créer depuis .env.example (non versionné)
+├── services/
+│   ├── rag_engine.py            ← pipeline RAG
+│   ├── mistral_utils.py         ← intégration Ollama
+│   ├── bookstack_reader.py      ← parsing HTML → chunks
+│   └── synonymes.py             ← expansion abréviations SUCRE
+├── ml/
+│   ├── extract_features.py      ← features ML
+│   ├── predict.py               ← inférence classifieur
+│   └── retrain_from_feedback.py ← réentraînement
+├── start_stevia.sh              ← démarrage complet
+├── reload_stevia.sh             ← rechargement sans rebuild
+├── update_stevia.sh             ← mise à jour + rebuild
+└── cleanup_and_reconfigure.sh   ← nettoyage complet Podman
+```
 
 ---
 
-## 🚀 Installation
+## Prérequis
 
-### 1. Cloner et se placer dans le répertoire
+- macOS avec **Ollama natif** installé (GPU Metal)
+- **Docker** (PostgreSQL + BookStack via compose.yaml)
+- Python 3.12+
 
-```bash
-cd SUCRE/src/Stevia
-```
+---
 
-### 2. Configurer l'environnement
+## Installation
+
+### 1. Configurer l'environnement
 
 ```bash
 cp .env.example .env
 ```
 
-Renseigner les valeurs dans `.env` — notamment les tokens BookStack :  
-**BookStack** → Profil → API Tokens → Create Token
+Renseigner les valeurs dans `.env` — tokens BookStack : Profil → API Tokens → Create Token
 
-### 3. Démarrer la stack
+### 2. Démarrer la stack
 
 ```bash
-chmod +x start_stevia.sh
+chmod +x *.sh
 ./start_stevia.sh
 ```
 
-Le script démarre automatiquement :
+Démarre automatiquement :
 - PostgreSQL + pgvector (`:5432`)
 - Ollama + modèle LLM (`:11434`)
 - FastAPI / Stevia (`:8001`)
 
 ---
 
-## 🔄 Commandes utiles
+## Scripts
 
 | Script | Description |
-|--------|-------------|
+|---|---|
 | `./start_stevia.sh` | Démarrage complet (rebuild inclus) |
-| `./reload_stevia.sh` | Redémarrage sans rebuild |
-| `./update_stevia.sh` | Mise à jour (modèle + rebuild) |
-| `./cleanup_and_reconfigure.sh` | Nettoyage complet des conteneurs et volumes |
+| `./reload_stevia.sh` | Rechargement sans rebuild |
+| `./update_stevia.sh` | Mise à jour + rebuild |
+| `./cleanup_and_reconfigure.sh` | Nettoyage complet des conteneurs Podman |
 
 ```bash
 # Logs en direct
@@ -111,46 +110,34 @@ curl http://127.0.0.1:8001/health
 
 ---
 
-## 🔧 Configuration `.env`
+## Configuration `.env`
 
 | Variable | Description |
-|----------|-------------|
-| `BOOKSTACK_URL` | URL de l'instance BookStack |
-| `BOOKSTACK_TOKEN_ID` | ID du token API BookStack |
-| `BOOKSTACK_TOKEN_SECRET` | Secret du token API BookStack |
-| `OLLAMA_HOST` | Adresse du serveur Ollama |
-| `OLLAMA_MODEL` | Modèle LLM à utiliser |
+|---|---|
+| `BOOKSTACK_URL` | URL BookStack local (ex: `http://localhost:8080`) |
+| `BOOKSTACK_TOKEN_ID` | Token API BookStack |
+| `BOOKSTACK_TOKEN_SECRET` | Secret du token API |
+| `OLLAMA_HOST` | `host.containers.internal` (Ollama natif macOS) |
+| `OLLAMA_MODEL` | Modèle LLM (ex: `gemma3:4b`) |
 | `POSTGRES_USER` | Utilisateur PostgreSQL |
 | `POSTGRES_PASSWORD` | Mot de passe PostgreSQL |
-| `POSTGRES_DB` | Nom de la base PostgreSQL |
-| `PROXY_URL` | URL du proxy réseau |
-| `NO_PROXY_LIST` | Hôtes exclus du proxy |
-| `TMPDIR` | Répertoire temporaire Podman |
+| `POSTGRES_DB` | Nom de la base |
 
 ---
 
-## 📡 API
+## Entraînement ML
 
-| Endpoint | Méthode | Description |
-|----------|---------|-------------|
-| `/health` | GET | Vérification de l'état de l'API |
-| `/ask/stream` | POST | Question en streaming (SSE) |
-| `/index` | POST | Indexation de la documentation BookStack |
+L'entraînement complet du classifieur de pertinence est disponible via l'interface admin Symfony : `/stevia/ml`
 
----
-
-## 🧠 Modèles LLM disponibles
-
-| Modèle | Taille | Notes |
-|--------|--------|-------|
-| `qwen3.5:0.8b` | ~1 GB | Modèle par défaut |
-| `qwen2.5:1.5b` | ~986 MB | Bon équilibre vitesse/qualité |
-| `qwen2.5:0.5b` | ~397 MB | Plus rapide, qualité réduite |
+- Génération du dataset depuis les feedbacks utilisateurs
+- Entraînement du modèle Decision Tree
+- Évaluation (accuracy, F1)
+- Reset du modèle
 
 ---
 
-## 📝 Notes
+## Fichiers à ne pas versionner
 
-- Les modèles Ollama sont stockés dans le volume `ollama_data` — ils persistent entre les redémarrages.
-- La base vectorielle est dans le volume `stevia_pgdata`.
-- Les logs de feedback utilisateur sont écrits dans les logs Symfony via le canal `stevia` (Monolog).
+```
+.env
+```

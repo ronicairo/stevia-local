@@ -155,7 +155,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------------------
     // Streaming SSE vers /stevia/ask/stream
     // ----------------------------------------------------------------
+    function showBotError(msg) {
+        const div = document.createElement("div");
+        div.classList.add("bot-message", "bot-message--error");
+        div.textContent = msg;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
     async function askSteviaStreaming(question) {
+        const abortController = new AbortController();
+
         try {
             const response = await fetch('/stevia/ask/stream', {
                 method: 'POST',
@@ -164,19 +174,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     'X-Requested-With': 'XMLHttpRequest'
                 },
                 credentials: 'same-origin',
+                signal: abortController.signal,
                 body: JSON.stringify({ question, roles: [window.STEVIA_ROLE || 'user'] })
             });
 
             if (!response.ok) {
-                let errorMsg = "Erreur technique : ";
                 if (response.status === 504) {
-                    errorMsg = "Le serveur a mis trop de temps à répondre.";
+                    showBotError("⏱️ Le serveur met trop de temps à répondre. Veuillez réessayer.");
                 } else if (response.status === 500) {
-                    errorMsg = "Erreur interne du serveur (vérifiez les logs).";
+                    showBotError("⚠️ Erreur interne du serveur.");
                 } else {
-                    errorMsg += `impossible de contacter Stevia (${response.status}).`;
+                    showBotError(`⚠️ Impossible de contacter Stevia (${response.status}).`);
                 }
-                return { answer: errorMsg, question };
+                return;
             }
 
             const reader = response.body.getReader();
@@ -189,25 +199,34 @@ document.addEventListener('DOMContentLoaded', () => {
             botMessageDiv.dataset.msgId = currentMsgId;
             messages.appendChild(botMessageDiv);
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n').filter(line => line.trim());
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n').filter(line => line.trim());
 
-                for (const line of lines) {
-                    try {
-                        const data = JSON.parse(line);
-                        if (data.content) {
-                            fullAnswer += data.content;
-                            botMessageDiv.innerHTML = formatText(fullAnswer);
-                            messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+                    for (const line of lines) {
+                        try {
+                            const data = JSON.parse(line);
+                            if (data.content) {
+                                fullAnswer += data.content;
+                                botMessageDiv.innerHTML = formatText(fullAnswer);
+                                messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+                            }
+                        } catch (e) {
+                            // chunk incomplet — normal en streaming
                         }
-                    } catch (e) {
-                        // chunk incomplet — normal en streaming
                     }
                 }
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    botMessageDiv.remove();
+                    showBotError("⏱️ La requête a été interrompue (timeout). Veuillez réessayer.");
+                    return;
+                }
+                throw e;
             }
 
             if (fullAnswer && !fullAnswer.includes("Comment puis-je vous aider")) {
@@ -215,13 +234,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 botMessageDiv.appendChild(feedbackBtns);
             }
 
-            return fullAnswer || "Réponse vide.";
-
         } catch (e) {
+            if (e.name === 'AbortError') {
+                showBotError("⏱️ La requête a été interrompue (timeout). Veuillez réessayer.");
+                return;
+            }
             console.error(e);
-            if (e.name === 'AbortError') return "La requête a été annulée.";
-            return "Erreur réseau : Stevia IA n'est pas accessible (le serveur Python est-il démarré ?).";
-        }
+            showBotError("⚠️ Erreur réseau : Stevia n'est pas accessible.");
+        } finally {}
     }
 
     // ----------------------------------------------------------------
