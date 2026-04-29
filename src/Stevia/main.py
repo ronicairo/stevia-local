@@ -26,13 +26,14 @@ os.makedirs(_LOG_DIR, exist_ok=True)
 
 stevia_logger = logging.getLogger("stevia")
 stevia_logger.setLevel(logging.INFO)
-_stevia_handler = logging.FileHandler(os.path.join(_LOG_DIR, "stevia.log"))
+_log_date = datetime.now().strftime("%Y-%m-%d")
+_stevia_handler = logging.FileHandler(os.path.join(_LOG_DIR, f"stevia-{_log_date}.log"))
 _stevia_handler.setFormatter(MonologFormatter())
 stevia_logger.addHandler(_stevia_handler)
 
-train_logger = logging.getLogger("stevia_entrainement")
+train_logger = logging.getLogger("stevia_training")
 train_logger.setLevel(logging.INFO)
-_train_handler = logging.FileHandler(os.path.join(_LOG_DIR, "stevia-entrainement.log"))
+_train_handler = logging.FileHandler(os.path.join(_LOG_DIR, "stevia-training.log"))
 _train_handler.setFormatter(MonologFormatter())
 train_logger.addHandler(_train_handler)
 

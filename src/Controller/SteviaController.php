@@ -165,6 +165,7 @@ class SteviaController extends AbstractController
     #[Route('/stevia/index/all', name: 'stevia_index_all', methods: ['POST'], options: ['expose' => true])]
     public function indexAll(): JsonResponse
     {
+        set_time_limit(0);
         try {
             $response = $this->client->request('GET', $this->apiStevia . '/bookstack/books', ['timeout' => 30]);
             $books    = $response->toArray(false)['data'] ?? [];
@@ -237,6 +238,14 @@ class SteviaController extends AbstractController
     #[Route('/stevia/health', name: 'stevia_health', methods: ['GET'], options: ['expose' => true])]
     public function healthCheckStevia(): JsonResponse
     {
+        $now  = new \DateTime('now', new \DateTimeZone('Europe/Paris'));
+        $time = (int)$now->format('G') * 60 + (int)$now->format('i');
+        $dow  = (int)$now->format('N');
+
+        if (!($dow <= 5 && $time >= 450 && $time < 1110)) {
+            return new JsonResponse(['status' => 'offline']);
+        }
+
         try {
             $response = $this->client->request('GET', $this->apiStevia . '/health', ['timeout' => 5]);
 

@@ -9,8 +9,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
-STEVIA_ENV_FILE="$SCRIPT_DIR/.env"
+STEVIA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$STEVIA_DIR"
+STEVIA_ENV_FILE="$STEVIA_DIR/.env"
 G='\033[0;32m' Y='\033[1;33m' R='\033[0;31m' B='\033[0;34m' N='\033[0m'
 
 echo -e "${B}╔══════════════════════════════════════════╗${N}"

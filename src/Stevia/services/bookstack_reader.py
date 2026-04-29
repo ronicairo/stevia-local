@@ -24,6 +24,13 @@ def clean_html(html: str) -> str:
     html = re.sub(r'<li[^>]*>\s*(\d+\.?\s*)', r'\n\1 ', html)
     html = re.sub(r'<li[^>]*>', r'\n• ', html)
 
+    # Structure des tableaux : séparateur entre cellules et lignes
+    html = re.sub(r'</th>', r' | ', html)
+    html = re.sub(r'</td>', r' | ', html)
+    html = re.sub(r'</tr>', r'\n\n', html)
+    html = re.sub(r'<table[^>]*>', r'\n\n', html)
+    html = re.sub(r'</table>', r'\n\n', html)
+
     # Sauts de ligne pour paragraphes (ouverture ET fermeture)
     html = re.sub(r'<p[^>]*>', r'\n\n', html)
     html = re.sub(r'</p>', r'\n', html)
@@ -215,9 +222,9 @@ def parse_bookstack_page(page: dict, book_name: str = None, book_slug: str = Non
     )
 
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1200,
-        chunk_overlap=100,
-        separators=["\n\n", "\n### ", "\n## ", "\n# ", "\n", " "]
+        chunk_size=800,
+        chunk_overlap=80,
+        separators=["\n# ", "\n## ", "\n### ", "\n#### ", "\n\n", "\n• ", "\n", " "]
     )
 
     docs = text_splitter.split_documents([doc])

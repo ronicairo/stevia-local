@@ -6,7 +6,8 @@
 
 set -euo pipefail
 
-STEVIA_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+STEVIA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$STEVIA_DIR/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
 STEVIA_ENV_FILE="$STEVIA_DIR/.env"
