@@ -12,7 +12,7 @@ rag_logger.setLevel(logging.INFO)
 from functools import lru_cache
 from langchain_core.documents import Document as LCDocument
 from langchain_postgres import PGVector
-from langchain_community.embeddings import FastEmbedEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from sqlalchemy import create_engine, text
 from services.mistral_utils import refine_answer_streaming
 from services.bookstack_reader import parse_bookstack_page
@@ -46,7 +46,11 @@ def db_exec(stmt: str, params: dict | None = None):
     with ENGINE.begin() as conn:
         return conn.execute(text(stmt), params or {})
 
-embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+_OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
+embeddings = OllamaEmbeddings(
+    model="qwen3-embedding:0.6b",
+    base_url=f"http://{_OLLAMA_HOST}:11434",
+)
 
 @lru_cache(maxsize=1)
 def get_vector_store():
