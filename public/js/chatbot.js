@@ -60,6 +60,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ----------------------------------------------------------------
+    // Une vraie réponse RAG contient toujours un lien source
+    // ----------------------------------------------------------------
+    function isRealAnswer(text) {
+        return text && text.includes('class="source-link"');
+    }
+
+    // ----------------------------------------------------------------
     // Boutons de feedback
     // ----------------------------------------------------------------
     function createFeedbackButtons(msgId, question, answer) {
@@ -132,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
             div.dataset.msgId = currentMsgId;
             div.innerHTML = formatText(text);
 
-            if (text && !text.includes("Comment puis-je vous aider aujourd'hui ?")) {
+            if (isRealAnswer(text)) {
                 const feedbackBtns = createFeedbackButtons(currentMsgId, question, text);
                 div.appendChild(feedbackBtns);
             }
@@ -229,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw e;
             }
 
-            if (fullAnswer && !fullAnswer.includes("Comment puis-je vous aider")) {
+            if (isRealAnswer(fullAnswer)) {
                 const feedbackBtns = createFeedbackButtons(currentMsgId, question, fullAnswer);
                 botMessageDiv.appendChild(feedbackBtns);
             }

@@ -614,3 +614,21 @@ async def ask_debug(payload: QueryModel):
         for chunk in rag_answer_streaming_debug(payload.question):
             yield json.dumps({"content": chunk}) + "\n"
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/debug/chunks")
+async def debug_chunks(payload: QueryModel):
+    from services.rag_engine import get_vector_store, expand_question
+    expanded = expand_question(payload.question)
+    store = get_vector_store()
+    docs = store.similarity_search_with_score(expanded, k=12)
+    return [
+        {
+            "score": round(score, 4),
+            "page_id": doc.metadata.get("page_id"),
+            "title": doc.metadata.get("title", "?"),
+            "book": doc.metadata.get("book_name", "?"),
+            "preview": doc.page_content[:800],
+        }
+        for doc, score in docs
+    ]

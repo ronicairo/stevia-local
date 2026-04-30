@@ -52,7 +52,6 @@
                     <tr>
                         <th>Livre</th>
                         <th class="text-center">Pages</th>
-                        <th class="text-center">Chunks</th>
                         <th class="text-center">Statut</th>
                         <th>Indexé le</th>
                         <th>Mis à jour (BookStack)</th>
@@ -70,9 +69,6 @@
                     </td>
                     <td class="text-center">
                         {{ book.page_count ?? book.pages_count ?? '—' }}
-                    </td>
-                    <td class="text-center">
-                        {{ book.chunk_count ?? book.chunks ?? '—' }}
                     </td>
                     <td class="text-center">
                         {% if book.is_indexed ?? book.indexed ?? false %}

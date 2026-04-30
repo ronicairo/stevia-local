@@ -70,7 +70,7 @@ def get_page_url(metadata: dict) -> str:
         return f"{BOOKSTACK_PUBLIC_URL}/books/{book_slug}/page/{slug}"
     elif page_id:
         return f"{BOOKSTACK_PUBLIC_URL}/link/{page_id}"
-    return ""
+    return BOOKSTACK_PUBLIC_URL
 
 
 # FONCTIONS UTILITAIRES RAG
@@ -158,10 +158,10 @@ def filter_off_topic(best_score: float, second_score: float) -> str | None:
     """Retourne un message de rejet si hors-sujet, sinon None."""
     score_gap = second_score - best_score
 
-    if best_score > 0.75:
+    if best_score > 0.65:
         return "Cette question ne relève pas de la documentation SUCRE."
 
-    if best_score > 0.65 and score_gap < 0.05:
+    if best_score > 0.55 and score_gap < 0.05:
         return "Cette question ne semble pas concerner la documentation SUCRE."
 
     return None
@@ -233,14 +233,14 @@ def is_rejection_response(llm_response: str) -> bool:
         "cette question ne relève pas de la documentation sucre",
         "cette question ne semble pas concerner la documentation sucre",
         "cette question ne concerne pas sucre",
-        "information absente",
         "n'est pas présente dans le document",
-        "n'est pas mentionné",
+        "n'est pas contenue dans le document",
         "pas trouvé dans le document",
         "pas présent dans le document",
-        "je ne trouve pas",
-        "aucune information",
-        "pas d'information",
+        "ne figure pas dans le document",
+        "ne figure pas dans la documentation",
+        "ne concerne pas la documentation",
+        "ne fait pas partie de la documentation",
     ]
     return any(phrase in llm_response.lower() for phrase in rejection_phrases)
 
@@ -274,11 +274,15 @@ def log_question_features(question: str, best_doc, best_score: float, rank: int,
 def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
     """Générateur de réponse en streaming avec filtrage."""
 
-    # --- 1. SALUTATIONS ---
-    greetings = ["bonjour", "salut", "hello", "bonsoir", "hi", "coucou", "yo"]
-    clean_q = question.lower().strip().rstrip("!.,?")
+    # --- 1. SALUTATIONS ET HORS-SUJET ÉVIDENT ---
+    # Salutation seule → message de bienvenue
+    if re.match(r"^(bonjour|bonsoir|salut|hello|hi|hey|coucou|yo|bjr|bsr|cc|bj)\W*$", question.strip(), re.IGNORECASE):
+        yield "Bonjour, que puis-je faire pour vous ?"
+        return
 
-    if clean_q in greetings:
+    # Salutation en début de phrase → on la retire avant la recherche
+    question = re.sub(r"^(bonjour|bonsoir|salut|hello|hi|hey|coucou|yo|bjr|bsr|cc|bj)[,!.\s]+", "", question.strip(), flags=re.IGNORECASE).strip()
+    if not question:
         yield "Bonjour, que puis-je faire pour vous ?"
         return
 
@@ -310,8 +314,8 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
     try:
         from ml.predict import predict_relevance
         filtered = predict_relevance(expanded_question, docs_with_scores, roles)
-        # Si le meilleur doc avant ML avait un très bon score (< 0.15), on le protège
-        if not filtered or (filtered[0][1] > best_score_before_ml + 0.05 and best_score_before_ml < 0.15):
+        # Si le meilleur doc avant ML avait un bon score (< 0.50), on le protège
+        if not filtered or (filtered[0][1] > best_score_before_ml + 0.05 and best_score_before_ml < 0.50):
             docs_with_scores = docs_with_scores  # garder tous les docs
         else:
             docs_with_scores = filtered

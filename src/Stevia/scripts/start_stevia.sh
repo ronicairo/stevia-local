@@ -69,7 +69,12 @@ start_container() {
   if podman ps --format '{{.Names}}' | grep -q "^${name}$"; then
     echo -e "${G}✅ ${name} déjà actif${N}"
   elif podman ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
-    podman start "$name" >/dev/null
+    if ! podman start "$name" >/dev/null 2>&1; then
+      echo -e "${Y}⚠️  Premier démarrage échoué pour ${name}, nouvelle tentative...${N}"
+      sleep 2
+      podman start "$name" >/dev/null 2>&1 \
+        || { echo -e "${R}❌ Impossible de démarrer ${name}${N}"; podman logs --tail 20 "$name" 2>&1; exit 1; }
+    fi
     echo -e "${G}✅ ${name} redémarré${N}"
   else
     return 1
