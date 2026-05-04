@@ -21,7 +21,7 @@ def refine_answer_streaming(context: str, question: str):
     1. Réponds UNIQUEMENT avec les informations du DOCUMENT SOURCE. Zéro invention.
     2. DÉTECTE si la réponse à la question se trouve dans une liste à puces (•) du document.
        - OUI → restitue CHAQUE puce sur une ligne séparée avec un tiret (-). Ne fusionne PAS en prose.
-       - NON → rédige en prose courte (2-5 phrases max).
+       - NON → rédige en prose. Couvre TOUS les aspects importants du document pertinents à la question. Ne tronque pas.
     3. Utilise **gras** pour les termes importants présents dans le document.
     4. N'invente rien, n'explique pas les acronymes absents du document.
     """
@@ -32,7 +32,7 @@ def refine_answer_streaming(context: str, question: str):
 QUESTION : {question}
 
 Si la réponse est une liste à puces dans le document, restitue-la OBLIGATOIREMENT sous forme de tirets (-), une par ligne.
-Sinon, réponds en prose courte. Ne reproduis pas tout le document."""
+Sinon, réponds en prose complète en couvrant tous les points importants du document. Ne laisse pas de côté les informations pertinentes."""
 
     payload = {
         "model": OLLAMA_MODEL,
