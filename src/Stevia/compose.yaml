@@ -23,7 +23,7 @@ services:
 
     volumes:
       # Nouveau volume pour repartir a zero
-      - stevia_data_final:/var/lib/postgresql/data
+      - stevia_pgdata:/var/lib/postgresql/data
 
   # ==========================================
   # 2. APPLICATION PYTHON (API Stevia)
@@ -52,4 +52,4 @@ services:
 # DEFINITIONS GLOBALES
 # ==========================================
 volumes:
-  stevia_data_final:
+  stevia_pgdata:
