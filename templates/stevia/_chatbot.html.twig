@@ -4,8 +4,8 @@
    ===================================================================== #}
 
 {# Bouton flottant #}
-<button class="stevia-floating-btn" id="stevia-chat-toggle" title="Ouvrir Stevia">
-    <img src="{{ asset('images/stevia3.png') }}" alt="Stevia">
+<button class="stevia-floating-btn" id="stevia-chat-toggle" title="Ouvrir Stevia" aria-label="Ouvrir le chatbot Stevia" aria-expanded="false" aria-controls="stevia-chat-window">
+    <img src="{{ asset('images/stevia3.png') }}" alt="">
 </button>
 
 {# Fenêtre de chat #}
@@ -45,8 +45,8 @@
             autocomplete="off"
             aria-label="Votre question"
         >
-        <button class="stevia-send-btn" id="stevia-send" title="Envoyer (Entrée)">
-            <i class="bi bi-send"></i>
+        <button class="stevia-send-btn" id="stevia-send" title="Envoyer (Entrée)" aria-label="Envoyer">
+            <i class="bi bi-send" aria-hidden="true"></i>
         </button>
     </div>
 

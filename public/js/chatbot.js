@@ -73,11 +73,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const feedbackDiv = document.createElement('div');
         feedbackDiv.className = 'stevia-feedback';
         feedbackDiv.innerHTML = `
-            <button class="stevia-feedback-btn positive" data-msg-id="${msgId}" data-feedback="positive" title="Réponse utile">
-                <i class="bi bi-hand-thumbs-up"></i>
+            <button class="stevia-feedback-btn positive" data-msg-id="${msgId}" data-feedback="positive" title="Réponse utile" aria-label="Cette réponse est utile">
+                <i class="bi bi-hand-thumbs-up" aria-hidden="true"></i>
             </button>
-            <button class="stevia-feedback-btn negative" data-msg-id="${msgId}" data-feedback="negative" title="Réponse non pertinente">
-                <i class="bi bi-hand-thumbs-down"></i>
+            <button class="stevia-feedback-btn negative" data-msg-id="${msgId}" data-feedback="negative" title="Réponse non pertinente" aria-label="Cette réponse n'est pas pertinente">
+                <i class="bi bi-hand-thumbs-down" aria-hidden="true"></i>
             </button>
         `;
 
@@ -310,17 +310,33 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------------------
     // Event listeners — toggle widget
     // ----------------------------------------------------------------
+    function openChat() {
+        windowBox.classList.remove("hidden");
+        toggle.setAttribute("aria-expanded", "true");
+        if (input) setTimeout(() => input.focus(), 300);
+    }
+
+    function closeChat() {
+        windowBox.classList.add("hidden");
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.focus();
+    }
+
     if (toggle && windowBox) {
         toggle.addEventListener("click", () => {
-            const isOpening = windowBox.classList.contains("hidden");
-            windowBox.classList.toggle("hidden");
-            if (isOpening && input) setTimeout(() => input.focus(), 300);
+            windowBox.classList.contains("hidden") ? openChat() : closeChat();
         });
     }
 
     if (closeBtn && windowBox) {
-        closeBtn.addEventListener("click", () => windowBox.classList.add("hidden"));
+        closeBtn.addEventListener("click", closeChat);
     }
+
+    document.addEventListener("keydown", e => {
+        if (e.key === "Escape" && windowBox && !windowBox.classList.contains("hidden")) {
+            closeChat();
+        }
+    });
 
     if (send) send.addEventListener("click", sendMessage);
 
@@ -397,22 +413,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('Souhaitez-vous indexer tous les documents ?\nCette opération peut prendre plusieurs minutes.')) return;
 
         const btn = this;
-        const originalHTML = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Indexation en cours…';
 
-        try {
-            await fetch('/stevia/index/all', {
-                method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-            window.location.reload();
-        } catch (e) {
-            console.error(e);
-            alert('Erreur : ' + e.message);
-            btn.disabled = false;
-            btn.innerHTML = originalHTML;
-        }
+        const reloadTimer = setTimeout(() => window.location.reload(), 180000);
+
+        fetch('/stevia/index/all', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(() => { clearTimeout(reloadTimer); window.location.reload(); })
+            .catch(() => { clearTimeout(reloadTimer); window.location.reload(); });
     });
 
     document.getElementById('btn-delete-all')?.addEventListener('click', async function (e) {
