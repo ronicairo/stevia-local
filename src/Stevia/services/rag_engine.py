@@ -288,6 +288,13 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
 
     # --- 2. EXPANSION DES ABRÉVIATIONS ---
     expanded_question = expand_question(question)
+
+    # Requête trop vague : un seul mot sans expansion connue
+    words = question.strip().split()
+    if len(words) == 1 and expanded_question.strip() == question.strip():
+        yield "Votre question est trop courte. Pouvez-vous préciser ce que vous cherchez ?"
+        return
+
     search_keywords = extract_search_keywords(expanded_question)
 
     # --- 3. RECHERCHE VECTORIELLE ---
@@ -356,10 +363,31 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
         role_display = best_doc_roles[0].upper() if best_doc_roles else "autre profil"
         yield f"⚠️ Cette documentation concerne le profil **{role_display}**.\n\n"
 
-    # --- 8. CONSTRUCTION CONTEXTE ---
+    # --- 8. COMPLÉTION CONTEXTE — tous les chunks de la meilleure page ---
+    # Le ML filtering peut réduire docs_with_scores à 1 seul chunk de la page.
+    # On recharge les chunks manquants depuis la BDD pour ne pas tronquer le contexte.
+    try:
+        extra_rows = db_exec(
+            "SELECT document, cmetadata FROM langchain_pg_embedding WHERE cmetadata ->> 'page_id' = :pid",
+            {"pid": str(best_page_id)}
+        ).fetchall()
+        existing = {doc.page_content[:100] for doc, _, _ in docs_with_scores}
+        for row in extra_rows:
+            if row.document[:100] not in existing:
+                meta = row.cmetadata if isinstance(row.cmetadata, dict) else {}
+                docs_with_scores.append((
+                    LCDocument(page_content=row.document, metadata=meta),
+                    0.0,
+                    meta.get("roles", "all").split(",")
+                ))
+                existing.add(row.document[:100])
+    except Exception:
+        pass
+
+    # --- 8b. CONSTRUCTION CONTEXTE ---
     context, all_images, best_metadata = build_context(docs_with_scores, best_page_id, search_keywords)
 
-    # --- 8b. LOG FEATURES POUR FEEDBACK ---
+    # --- 8c. LOG FEATURES POUR FEEDBACK ---
     log_question_features(question, best_doc, docs_with_scores[0][1], rank=1, roles=roles)
 
     # --- 9. GÉNÉRATION LLM ---
@@ -423,7 +451,7 @@ def rag_answer_streaming_debug(question: str):
     print(f"{'='*40}\n")
 
 def delete_vectors_by_book_id(book_id: int):
-    res = db_exec("""
+    db_exec("""
         DELETE FROM langchain_pg_embedding
         WHERE cmetadata ->> 'source' = 'bookstack'
           AND cmetadata ->> 'book_id' = :bid
