@@ -41,6 +41,7 @@ Sinon, réponds en prose complète en couvrant tous les points importants du doc
             {"role": "user", "content": user_message}
         ],
         "stream": True,
+        "keep_alive": -1,
         "options": {
             "temperature": 0.0,
             "num_ctx": 2048,

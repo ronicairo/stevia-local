@@ -87,25 +87,22 @@ def search_by_keywords(keywords: list[str], existing_docs: list) -> list[tuple]:
 
     results = []
     try:
-        safe_keywords = [w.replace("'", "''") for w in keywords]
+        # Garde les 3 derniers mots-clés (noms de domaine spécifiques)
+        specific = keywords[-3:] if len(keywords) > 3 else keywords
+        safe_keywords = [w.replace("'", "''") for w in specific]
         conditions = " AND ".join([f"document ILIKE '%{w}%'" for w in safe_keywords])
         query = f"""
             SELECT document, cmetadata
             FROM langchain_pg_embedding
             WHERE {conditions}
-            LIMIT 2
+            LIMIT 3
         """
         keyword_results = db_exec(query).fetchall()
 
         for row in keyword_results:
-            already_found = any(
-                doc.page_content[:100] == row.document[:100]
-                for doc, _ in existing_docs
-            )
-            if not already_found:
-                metadata = row.cmetadata if isinstance(row.cmetadata, dict) else {}
-                new_doc = LCDocument(page_content=row.document, metadata=metadata)
-                results.append((new_doc, 0.10))
+            metadata = row.cmetadata if isinstance(row.cmetadata, dict) else {}
+            new_doc = LCDocument(page_content=row.document, metadata=metadata)
+            results.append((new_doc, 0.10))
 
     except Exception as e:
         pass  # silencieux — recherche lexicale optionnelle
@@ -246,6 +243,17 @@ def is_rejection_response(llm_response: str) -> bool:
 
 
 # FONCTION PRINCIPALE RAG
+def _log_intent_label(question: str, label: int):
+    """Enregistre un label d'intention (0=hors-sujet, 1=valide) pour l'entraînement futur."""
+    try:
+        db_exec(
+            "INSERT INTO stevia_intent_labels (question, label) VALUES (:q, :l)",
+            {"q": question[:500], "l": label},
+        )
+    except Exception:
+        pass
+
+
 def log_question_features(question: str, best_doc, best_score: float, rank: int, roles: list[str]):
     """Enregistre les features ML de la question en BDD pour labélisation future."""
     try:
@@ -294,6 +302,16 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
     if len(words) == 1 and expanded_question.strip() == question.strip():
         yield "Votre question est trop courte. Pouvez-vous préciser ce que vous cherchez ?"
         return
+
+    # Intent classifier — bloque les questions hors-sujet sémantiquement
+    try:
+        from services.intent_classifier import is_valid_question
+        if not is_valid_question(expanded_question):
+            _log_intent_label(expanded_question, 0)
+            yield "Cette question ne semble pas concerner la documentation SUCRE."
+            return
+    except Exception:
+        pass
 
     search_keywords = extract_search_keywords(expanded_question)
 
@@ -405,6 +423,7 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
             yield f"![image]({img_url})\n"
 
     if not is_rejection:
+        _log_intent_label(expanded_question, 1)
         source_url = get_page_url(best_metadata)
         if source_url:
             yield "\n"

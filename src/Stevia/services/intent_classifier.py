@@ -1,0 +1,118 @@
+import os
+import numpy as np
+from functools import lru_cache
+from pathlib import Path
+from langchain_ollama import OllamaEmbeddings
+
+_VALID = [
+    "comment créer un workflow",
+    "à quoi sert la phase amiable",
+    "quelle est la date de prescription",
+    "comment notifier une créance",
+    "que faire si le débiteur est décédé",
+    "comment paramétrer les délais dans sucre",
+    "qu'est-ce que la relance biennale",
+    "comment fonctionne le recouvrement contentieux",
+    "procédure de contestation d'une créance",
+    "créer une adresse débiteur",
+    "intégration journée comptable heure",
+    "habilitations utilisateurs sucre",
+    "comment suspendre un dossier",
+    "différence entre phase amiable et contentieuse",
+    "comment envoyer une mise en demeure",
+    "quel est le délai de prescription",
+    "comment fonctionne l'opposition amiable",
+    "que signifie le statut ar contrainte",
+    # Questions de validation fonctionnelle SUCRE
+    "quels sont les objectifs de sucre",
+    "à quoi servent les échéances de suivi",
+    "quelles sont les en-têtes obligatoires du csv dans les notifications en masse",
+    "quelles sont les conditions à respecter dans les notif en masse",
+    "à quoi correspondent les créances inférieures à 0,68% pss sans mouvement",
+    "à quelle heure a lieu l'intégration de la journée comptable",
+    "à quoi sert le champ date transmission pôle",
+    "à quoi sert le champ date manifestation débiteur",
+    "quelles sont les étapes minimum que doit avoir un workflow",
+    "qu'est-ce qu'un workflow",
+    "qu'est-ce que le calendrier",
+    "lors de la création d'une adresse débiteur combien de caractères maximum pour le champ civilité",
+    "à quoi servent les libellés génériques",
+    "à quoi sert l'onglet aide mémoire",
+    "c'est quoi les libellés notifications",
+    "à quoi sert l'épuration des données de la base",
+    "c'est quoi les créances à monter en charge",
+    "comment vérifier la date de détection de la créance en fonction du délai de régularisation du fichier csv",
+    "à quoi sert la balise date_ar_med",
+]
+
+_INVALID = [
+    "un deux test",
+    "bout en train",
+    "comment ça va",
+    "azertyuiop",
+    "test test test",
+    "1 2 3",
+    "quelle belle journée",
+    "je veux démissionner",
+    "tu fais quoi ce soir",
+    "allo allo",
+    "bla bla bla",
+    "abc def ghi",
+    "il fait beau",
+    "bonjour je suis là",
+    "micro test sonore",
+    "coucou tu m'entends",
+]
+
+
+def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na == 0 or nb == 0:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
+
+
+@lru_cache(maxsize=1)
+def _load_prototypes():
+    """Calcule les embeddings des exemples une seule fois au premier appel."""
+    _host = os.getenv("OLLAMA_HOST", "127.0.0.1")
+    model = OllamaEmbeddings(
+        model="qwen3-embedding:0.6b",
+        base_url=f"http://{_host}:11434",
+    )
+    valid_vecs   = np.array(model.embed_documents(_VALID))
+    invalid_vecs = np.array(model.embed_documents(_INVALID))
+    return model, valid_vecs, invalid_vecs
+
+
+@lru_cache(maxsize=1)
+def _load_trained_model():
+    """Charge le modèle entraîné depuis intent_model.pkl s'il existe."""
+    model_path = Path(__file__).parent.parent / "ml" / "dataset" / "intent_model.pkl"
+    if model_path.exists():
+        import joblib
+        return joblib.load(model_path)
+    return None
+
+
+def is_valid_question(question: str) -> bool:
+    """
+    Retourne True si la question ressemble à une vraie question SUCRE.
+    Utilise le modèle entraîné (intent_model.pkl) s'il existe,
+    sinon fallback sur la similarité cosinus avec les prototypes.
+    En cas d'erreur Ollama, laisse passer (True).
+    """
+    try:
+        model_emb, valid_vecs, invalid_vecs = _load_prototypes()
+        q_vec = np.array(model_emb.embed_query(question))
+
+        trained = _load_trained_model()
+        if trained is not None:
+            return bool(trained.predict(q_vec.reshape(1, -1))[0])
+
+        max_valid   = max(_cosine(q_vec, v)  for v in valid_vecs)
+        max_invalid = max(_cosine(q_vec, iv) for iv in invalid_vecs)
+        return max_valid >= max_invalid
+
+    except Exception:
+        return True

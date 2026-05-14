@@ -279,6 +279,7 @@
 
 .stevia-input-area {
     display: flex;
+    align-items: center;
     border-top: 1px solid rgba(0, 0, 0, 0.08);
     background: #ffffff;
     padding: 12px;

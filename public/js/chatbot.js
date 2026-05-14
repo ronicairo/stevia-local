@@ -186,13 +186,20 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
+                let errorMsg;
                 if (response.status === 504) {
-                    showBotError("⏱️ Le serveur met trop de temps à répondre. Veuillez réessayer.");
+                    errorMsg = "⏱️ Le serveur met trop de temps à répondre. Veuillez réessayer.";
                 } else if (response.status === 500) {
-                    showBotError("⚠️ Erreur interne du serveur.");
+                    errorMsg = "⚠️ Erreur interne du serveur.";
                 } else {
-                    showBotError(`⚠️ Impossible de contacter Stevia (${response.status}).`);
+                    errorMsg = `⚠️ Impossible de contacter Stevia (${response.status}).`;
                 }
+                showBotError(errorMsg);
+                fetch('/stevia/log/error', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    body: JSON.stringify({ status: response.status, message: errorMsg })
+                }).catch(() => {});
                 return;
             }
 
@@ -292,6 +299,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusDot.classList.remove("offline");
                 statusDot.classList.add("online");
                 statusDot.title = "Stevia est en ligne";
+                if (input) { input.disabled = false; input.placeholder = "Posez votre question..."; }
+                if (send)  send.disabled = false;
             } else {
                 throw new Error('offline');
             }
@@ -299,6 +308,8 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDot.classList.remove("online");
             statusDot.classList.add("offline");
             statusDot.title = "Stevia est hors ligne";
+            if (input) { input.disabled = true; input.placeholder = "Stevia est hors ligne"; }
+            if (send)  send.disabled = true;
         }
     }
 

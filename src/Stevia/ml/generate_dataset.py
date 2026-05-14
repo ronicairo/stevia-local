@@ -9,8 +9,8 @@ Stratégie :
   - Les autres chunks récupérés → label 0 (non pertinent)
   - On équilibre les classes (sous-échantillonnage de la classe 0).
 
-Usage (dans le conteneur) :
-    python /app/ml/generate_dataset.py [--max-chunks N]
+Usage :
+    python ml/generate_dataset.py [--max-chunks N]
 """
 
 import os
@@ -24,8 +24,8 @@ import numpy as np
 from pathlib import Path
 from sqlalchemy import create_engine, text
 
-# Ajouter /app au path pour accéder à fastembed
-sys.path.insert(0, "/app")
+sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from extract_features import extract_features
 
@@ -76,14 +76,17 @@ def similarity_search_raw(query_vector: list[float], k: int = 12) -> list[dict]:
     ]
 
 
-# ─── Embeddings (FastEmbed) ────────────────────────────────────────────────────
+# ─── Embeddings (Ollama — même modèle que le RAG engine) ──────────────────────
 _embeddings = None
 
 def get_embeddings():
     global _embeddings
     if _embeddings is None:
-        from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
-        _embeddings = FastEmbedEmbeddings()
+        from langchain_ollama import OllamaEmbeddings
+        _embeddings = OllamaEmbeddings(
+            model="qwen3-embedding:0.6b",
+            base_url=f"http://{OLLAMA_HOST}:11434",
+        )
     return _embeddings
 
 

@@ -11,6 +11,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Contracts\Cache\CacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 
 class SteviaController extends AbstractController
 {
@@ -18,17 +20,20 @@ class SteviaController extends AbstractController
     private string $apiStevia;
     private LoggerInterface $logger;
     private LoggerInterface $trainingLogger;
+    private CacheInterface $cache;
 
     public function __construct(
         HttpClientInterface $client,
         string $apiStevia,
         LoggerInterface $steviaLogger,
-        LoggerInterface $steviaTrainingLogger
+        LoggerInterface $steviaTrainingLogger,
+        CacheInterface $cache
     ) {
         $this->client          = $client;
         $this->apiStevia       = $apiStevia;
         $this->logger          = $steviaLogger;
         $this->trainingLogger  = $steviaTrainingLogger;
+        $this->cache           = $cache;
     }
 
     /**
@@ -61,7 +66,7 @@ class SteviaController extends AbstractController
                                 'question' => $payload['question'],
                                 'roles'    => $roles,
                             ],
-                            'timeout' => 60,
+                            'timeout' => 100,
                             'buffer'  => false,
                         ]
                     );
@@ -102,8 +107,21 @@ class SteviaController extends AbstractController
     #[Route('/stevia/indexation', name: 'stevia_indexation', methods: ['GET'], options: ['expose' => true])]
     public function indexationStevia(): Response
     {
-        $books = $this->getBookstackBooks();
-        return $this->render('stevia/indexation.html.twig', ['books' => $books]);
+        $offline = false;
+        $books   = [];
+        try {
+            $books = $this->getBookstackBooks();
+        } catch (Exception $e) {
+            $offline = true;
+        }
+        if (!$offline && empty($books)) {
+            try {
+                $this->client->request('GET', $this->apiStevia . '/health', ['timeout' => 3]);
+            } catch (Exception $e) {
+                $offline = true;
+            }
+        }
+        return $this->render('stevia/indexation.html.twig', ['books' => $books, 'offline' => $offline]);
     }
 
     #[Route('/stevia/index/book/{bookId}', name: 'stevia_index_book', methods: ['POST'], options: ['expose' => true])]
@@ -256,7 +274,15 @@ class SteviaController extends AbstractController
                 }
             }
         } catch (Exception $e) {
-            $this->logger->error('Stevia API hors ligne', ['message' => $e->getMessage()]);
+            $alreadyLogged = true;
+            $this->cache->get('stevia_offline_logged', function (ItemInterface $item) use (&$alreadyLogged) {
+                $item->expiresAfter(3600);
+                $alreadyLogged = false;
+                return true;
+            });
+            if (!$alreadyLogged) {
+                $this->logger->error('Stevia API hors ligne', ['message' => $e->getMessage()]);
+            }
             return new JsonResponse(['status' => 'offline', 'error' => $e->getMessage()], 503);
         }
 
@@ -277,10 +303,17 @@ class SteviaController extends AbstractController
 
         $username = 'local';
 
+        $cleanAnswer = preg_replace(
+            '/<a href="([^"]+)"[^>]*>[^<]*<\/a>/',
+            'Source: $1',
+            strip_tags($answer, '<a>')
+        );
+        $cleanAnswer = strip_tags($cleanAnswer);
+
         $logData = [
             'user'     => $username,
             'question' => $question,
-            'answer'   => $answer,
+            'answer'   => trim($cleanAnswer),
         ];
 
         if ($feedback === 'negative') {
@@ -381,6 +414,21 @@ class SteviaController extends AbstractController
             'Cache-Control'     => 'no-cache',
             'X-Accel-Buffering' => 'no',
         ]);
+    }
+
+    /**
+     * LOG ERREUR CLIENT (JS → Monolog stevia)
+     */
+    #[Route('/stevia/log/error', name: 'stevia_log_error', methods: ['POST'], options: ['expose' => true])]
+    public function logClientError(Request $request): JsonResponse
+    {
+        $data   = json_decode($request->getContent(), true);
+        $status = $data['status'] ?? 'inconnu';
+        $msg    = $data['message'] ?? '';
+
+        $this->logger->error('Erreur client JS', ['http_status' => $status, 'message' => $msg]);
+
+        return $this->json(['status' => 'logged']);
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────

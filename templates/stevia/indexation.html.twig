@@ -14,10 +14,10 @@
 
 {% block page_actions %}
 <div class="d-flex gap-2">
-    <button class="btn btn-primary btn-sm" id="btn-index-all">
+    <button class="btn btn-primary btn-sm" id="btn-index-all" {{ offline ? 'disabled' : '' }}>
         <i class="bi bi-arrow-repeat me-1"></i>Tout indexer
     </button>
-    <button class="btn btn-outline-danger btn-sm" id="btn-delete-all">
+    <button class="btn btn-outline-danger btn-sm" id="btn-delete-all" {{ offline ? 'disabled' : '' }}>
         <i class="bi bi-trash me-1"></i>Tout supprimer
     </button>
 </div>
@@ -33,14 +33,20 @@
 
     <div class="sucre-card-body p-0">
 
-        {% if books is empty %}
+        {% if offline %}
+        <div class="p-5 text-center text-muted">
+            <i class="bi bi-plug" style="font-size: 3rem; opacity: 0.4;"></i>
+            <p class="mt-3 mb-1 fw-semibold">Stevia est hors ligne</p>
+            <p class="small">L'API Stevia n'est pas accessible pour le moment. L'indexation est indisponible.</p>
+            <a href="{{ path('stevia_indexation') }}" class="btn btn-sm btn-outline-secondary mt-2">
+                <i class="bi bi-arrow-clockwise me-1"></i>Réessayer
+            </a>
+        </div>
+        {% elseif books is empty %}
         <div class="p-5 text-center text-muted">
             <i class="bi bi-database-x" style="font-size: 3rem; opacity: 0.4;"></i>
             <p class="mt-3 mb-1">Aucun document disponible.</p>
-            <p class="small">
-                Vérifiez que l'API Stevia est bien démarrée
-                (<code>http://localhost:8001</code>) et que BookStack est accessible.
-            </p>
+            <p class="small">BookStack ne contient aucun livre accessible.</p>
             <a href="{{ path('stevia_indexation') }}" class="btn btn-sm btn-outline-primary mt-2">
                 <i class="bi bi-arrow-clockwise me-1"></i>Actualiser
             </a>

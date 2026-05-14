@@ -9,28 +9,42 @@ Peut aussi être lancé manuellement :
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 
-# Logger partagé avec main.py (même fichier via le répertoire monté)
-_LOG_DIR = os.getenv("STEVIA_LOG_DIR", "/app/var_log")
-os.makedirs(_LOG_DIR, exist_ok=True)
-train_logger = logging.getLogger("stevia_entrainement")
+# Réutilise le logger configuré par main.py (même nom, même handler).
+# Fallback Monolog si lancé en standalone (python ml/retrain_from_feedback.py).
+train_logger = logging.getLogger("stevia_training")
 if not train_logger.handlers:
-    _h = logging.FileHandler(os.path.join(_LOG_DIR, "stevia-entrainement.log"))
-    _h.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    class _MonologFormatter(logging.Formatter):
+        def format(self, record):
+            dt = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+            return f"[{dt}] {record.name}.{record.levelname}: {record.getMessage()}"
+
+    _log_dir = os.getenv("STEVIA_LOG_DIR", "/app/var_log")
+    os.makedirs(_log_dir, exist_ok=True)
+    _log_date = datetime.now().strftime("%Y-%m-%d")
+    _h = logging.FileHandler(os.path.join(_log_dir, f"stevia_training-{_log_date}.log"))
+    _h.setFormatter(_MonologFormatter())
     train_logger.addHandler(_h)
 train_logger.setLevel(logging.INFO)
 import joblib
 from sqlalchemy import create_engine, text
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score
 
-DATASET_DIR = Path(__file__).parent / "dataset"
-MODEL_PATH  = DATASET_DIR / "best_model.pkl"
-META_PATH   = DATASET_DIR / "model_meta.pkl"
+DATASET_DIR       = Path(__file__).parent / "dataset"
+MODEL_PATH        = DATASET_DIR / "best_model.pkl"
+META_PATH         = DATASET_DIR / "model_meta.pkl"
+INTENT_MODEL_PATH = DATASET_DIR / "intent_model.pkl"
 
 FEATURE_COLS = [
     "cosine_score", "keyword_match_count", "keyword_match_ratio",
@@ -86,7 +100,6 @@ def retrain() -> dict:
     Réentraîne le modèle en fusionnant dataset original + feedbacks.
     Retourne les métriques du nouveau modèle.
     """
-    from datetime import datetime, timezone
 
     train_logger.info("[Retrain] Chargement des données...")
 
@@ -118,28 +131,34 @@ def retrain() -> dict:
         X, y, test_size=0.3, stratify=use_stratify, random_state=42
     )
 
-    # Réentraînement Decision Tree (paramètres optimisés)
-    model = DecisionTreeClassifier(
-        criterion="gini",
-        max_depth=3,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        class_weight="balanced",
-        random_state=42,
-    )
-    model.fit(X_train, y_train)
+    # Comparaison des algorithmes — on garde le meilleur F1
+    candidates = {
+        "Random Forest": Pipeline([("clf", RandomForestClassifier(n_estimators=100, class_weight="balanced", random_state=42))]),
+        "Decision Tree": Pipeline([("clf", DecisionTreeClassifier(max_depth=5, class_weight="balanced", random_state=42))]),
+        "KNN":           Pipeline([("scaler", StandardScaler()), ("clf", KNeighborsClassifier(n_neighbors=5))]),
+        "Logistic Regression": Pipeline([("scaler", StandardScaler()), ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42))]),
+    }
 
+    best_name, best_f1, best_model = None, -1, None
+    for name, candidate in candidates.items():
+        candidate.fit(X_train, y_train)
+        f1_candidate = f1_score(candidate.predict(X_test), y_test, zero_division=0)
+        train_logger.info(f"[Retrain] {name} — F1={f1_candidate:.4f}")
+        if f1_candidate > best_f1:
+            best_f1, best_name, best_model = f1_candidate, name, candidate
+
+    model = best_model
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
     f1  = f1_score(y_test, y_pred, zero_division=0)
 
-    train_logger.info(f"[Retrain] Nouveau modèle — Accuracy={acc:.4f}  F1={f1:.4f}")
+    train_logger.info(f"[Retrain] Meilleur modèle : {best_name} — Accuracy={acc:.4f}  F1={f1:.4f}")
 
     # Sauvegarde
     joblib.dump(model, MODEL_PATH)
 
     meta = joblib.load(META_PATH) if META_PATH.exists() else {}
-    meta["name"]    = "Decision Tree (feedback)"
+    meta["name"]    = f"{best_name} (feedback)"
     meta["metrics"] = {"accuracy": round(acc, 4), "f1": round(f1, 4)}
     meta["n_train"] = len(X_train)
     meta["n_feedback"] = len(df_feedback)
@@ -157,22 +176,139 @@ def retrain() -> dict:
     return {"accuracy": acc, "f1": f1, "n_total": len(df), "n_feedback": len(df_feedback)}
 
 
+def retrain_intent_classifier() -> dict:
+    """
+    Entraîne le classifieur d'intention à partir des labels auto-collectés.
+    Charge stevia_intent_labels, calcule les embeddings Ollama, entraîne une
+    LogisticRegression et sauvegarde dans intent_model.pkl.
+    """
+    import numpy as np
+    from langchain_ollama import OllamaEmbeddings
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.pipeline import Pipeline
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import f1_score, accuracy_score
+
+    train_logger.info("[IntentRetrain] Chargement des labels...")
+    engine = create_engine(DB_URL)
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT question, label FROM stevia_intent_labels"
+        )).fetchall()
+
+    if len(rows) < 10:
+        train_logger.info(f"[IntentRetrain] Pas assez de données ({len(rows)} < 10). Ignoré.")
+        return {}
+
+    questions = [r[0] for r in rows]
+    y = np.array([int(r[1]) for r in rows])
+
+    if len(set(y)) < 2:
+        train_logger.info("[IntentRetrain] Une seule classe présente. Ignoré.")
+        return {}
+
+    train_logger.info(f"[IntentRetrain] {len(rows)} exemples ({sum(y==1)} valides, {sum(y==0)} invalides). Calcul embeddings...")
+    _host = os.getenv("OLLAMA_HOST", "127.0.0.1")
+    emb_model = OllamaEmbeddings(
+        model="qwen3-embedding:0.6b",
+        base_url=f"http://{_host}:11434",
+    )
+    X = np.array(emb_model.embed_documents(questions))
+
+    min_class = min((y == c).sum() for c in set(y))
+    stratify = y if min_class >= 2 else None
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, stratify=stratify, random_state=42
+    )
+
+    model = Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42)),
+    ])
+    model.fit(X_train, y_train)
+
+    acc = accuracy_score(y_test, model.predict(X_test))
+    f1  = f1_score(y_test, model.predict(X_test), zero_division=0)
+    train_logger.info(f"[IntentRetrain] Accuracy={acc:.4f}  F1={f1:.4f}")
+
+    DATASET_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, INTENT_MODEL_PATH)
+
+    intent_meta = joblib.load(INTENT_META_PATH) if INTENT_META_PATH.exists() else {}
+    intent_meta["last_retrain_at"] = datetime.now(timezone.utc).isoformat()
+    intent_meta["metrics"] = {"accuracy": round(acc, 4), "f1": round(f1, 4)}
+    intent_meta["n_total"] = len(rows)
+    joblib.dump(intent_meta, INTENT_META_PATH)
+
+    # Invalider le cache dans intent_classifier
+    try:
+        from services.intent_classifier import _load_trained_model
+        _load_trained_model.cache_clear()
+        train_logger.info("[IntentRetrain] Cache intent invalidé — nouveau modèle actif.")
+    except Exception as e:
+        train_logger.warning(f"[IntentRetrain] Cache non invalidé : {e}")
+
+    return {"accuracy": acc, "f1": f1, "n_total": len(rows)}
+
+
+INTENT_RETRAIN_THRESHOLD = int(os.getenv("INTENT_RETRAIN_THRESHOLD", "10"))
+INTENT_META_PATH = DATASET_DIR / "intent_model_meta.pkl"
+
+
+def count_new_intent_labels_since_last_retrain() -> int:
+    """Compte les labels intent insérés depuis le dernier réentraînement intent."""
+    engine = create_engine(DB_URL)
+    meta = joblib.load(INTENT_META_PATH) if INTENT_META_PATH.exists() else {}
+    last_retrain = meta.get("last_retrain_at")
+
+    with engine.connect() as conn:
+        if last_retrain:
+            count = conn.execute(text("""
+                SELECT COUNT(*) FROM stevia_intent_labels
+                WHERE source = 'auto' AND created_at > :ts
+            """), {"ts": last_retrain}).scalar()
+        else:
+            count = conn.execute(text(
+                "SELECT COUNT(*) FROM stevia_intent_labels WHERE source = 'auto'"
+            )).scalar()
+
+    return count or 0
+
+
 def maybe_retrain() -> bool:
     """
-    Déclenche le réentraînement si le seuil de nouveaux feedbacks est atteint.
-    Retourne True si un réentraînement a eu lieu.
+    Déclenche les réentraînements selon leurs déclencheurs propres :
+    - classifieur pertinence : 10 feedbacks utilisateur
+    - classifieur intent     : 10 nouvelles questions auto-labélisées
+    Retourne True si au moins un réentraînement a eu lieu.
     """
     if not DB_URL:
         return False
+
+    did_retrain = False
+
+    # Classifieur pertinence — déclenché par les feedbacks
     try:
         n = count_new_feedbacks_since_last_retrain()
-        train_logger.info(f"[Retrain] {n} nouveau(x) feedback(s) depuis le dernier entraînement (seuil={RETRAIN_THRESHOLD})")
+        train_logger.info(f"[Retrain] {n} feedback(s) depuis le dernier entraînement (seuil={RETRAIN_THRESHOLD})")
         if n >= RETRAIN_THRESHOLD:
             retrain()
-            return True
+            did_retrain = True
     except Exception as e:
-        train_logger.error(f"[Retrain] Erreur lors de la vérification/réentraînement : {e}")
-    return False
+        train_logger.error(f"[Retrain] Erreur pertinence : {e}")
+
+    # Classifieur intent — déclenché par les questions auto-labélisées
+    try:
+        n_intent = count_new_intent_labels_since_last_retrain()
+        train_logger.info(f"[IntentRetrain] {n_intent} label(s) auto depuis le dernier entraînement (seuil={INTENT_RETRAIN_THRESHOLD})")
+        if n_intent >= INTENT_RETRAIN_THRESHOLD:
+            retrain_intent_classifier()
+            did_retrain = True
+    except Exception as e:
+        train_logger.error(f"[IntentRetrain] Erreur intent : {e}")
+
+    return did_retrain
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ import os
 import json
 import re
 import requests
+from pathlib import Path
 
 # ── Formatter style Monolog ───────────────────────────────────────────────────
 class MonologFormatter(logging.Formatter):
@@ -24,16 +25,17 @@ class MonologFormatter(logging.Formatter):
 _LOG_DIR = os.getenv("STEVIA_LOG_DIR", "/app/var_log")
 os.makedirs(_LOG_DIR, exist_ok=True)
 
+_log_date = datetime.now().strftime("%Y-%m-%d")
+
 stevia_logger = logging.getLogger("stevia")
 stevia_logger.setLevel(logging.INFO)
-_log_date = datetime.now().strftime("%Y-%m-%d")
 _stevia_handler = logging.FileHandler(os.path.join(_LOG_DIR, f"stevia-{_log_date}.log"))
 _stevia_handler.setFormatter(MonologFormatter())
 stevia_logger.addHandler(_stevia_handler)
 
 train_logger = logging.getLogger("stevia_training")
 train_logger.setLevel(logging.INFO)
-_train_handler = logging.FileHandler(os.path.join(_LOG_DIR, "stevia-training.log"))
+_train_handler = logging.FileHandler(os.path.join(_LOG_DIR, f"stevia_training-{_log_date}.log"))
 _train_handler.setFormatter(MonologFormatter())
 train_logger.addHandler(_train_handler)
 
@@ -92,7 +94,7 @@ def get_bookstack_headers():
 
 
 def init_feedback_table():
-    """Crée la table de feedback si elle n'existe pas."""
+    """Crée les tables de feedback si elles n'existent pas."""
     try:
         db_exec("""
             CREATE TABLE IF NOT EXISTS stevia_ml_feedback (
@@ -115,11 +117,52 @@ def init_feedback_table():
         """)
     except Exception as e:
         stevia_logger.error(f"[Init] Erreur création table feedback : {e}")
+    try:
+        db_exec("""
+            CREATE TABLE IF NOT EXISTS stevia_intent_labels (
+                id         SERIAL PRIMARY KEY,
+                question   TEXT NOT NULL,
+                label      SMALLINT NOT NULL,
+                source     VARCHAR(20) DEFAULT 'auto',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    except Exception as e:
+        stevia_logger.error(f"[Init] Erreur création table intent_labels : {e}")
+
+
+def seed_intent_labels():
+    """Insère les 34 prototypes hardcodés si la table est vide, puis entraîne intent_model.pkl."""
+    try:
+        count = db_exec("SELECT COUNT(*) FROM stevia_intent_labels").fetchone()[0]
+        if count > 0:
+            return
+        from services.intent_classifier import _VALID, _INVALID
+        for q in _VALID:
+            db_exec("INSERT INTO stevia_intent_labels (question, label, source) VALUES (:q, 1, 'seed')", {"q": q})
+        for q in _INVALID:
+            db_exec("INSERT INTO stevia_intent_labels (question, label, source) VALUES (:q, 0, 'seed')", {"q": q})
+        train_logger.info(f"[IntentSeed] {len(_VALID)+len(_INVALID)} prototypes insérés dans stevia_intent_labels.")
+    except Exception as e:
+        train_logger.error(f"[IntentSeed] Erreur seed intent labels : {e}")
+        return
+
+    # Entraîne intent_model.pkl tout de suite si pas encore présent
+    try:
+        from pathlib import Path
+        intent_model_path = Path(__file__).parent / "ml" / "dataset" / "intent_model.pkl"
+        if not intent_model_path.exists():
+            from ml.retrain_from_feedback import retrain_intent_classifier
+            retrain_intent_classifier()
+            train_logger.info("[IntentSeed] intent_model.pkl entraîné depuis les prototypes.")
+    except Exception as e:
+        train_logger.error(f"[IntentSeed] Erreur entraînement intent initial : {e}")
 
 
 @app.on_event("startup")
 def startup():
     init_feedback_table()
+    seed_intent_labels()
     # Initialise les tables PGVector (crée langchain_pg_embedding si absente)
     try:
         from services.rag_engine import get_vector_store
@@ -129,9 +172,11 @@ def startup():
 
 
 @app.post("/ask/stream")
-async def ask_stream(payload: QueryModel):
+async def ask_stream(payload: QueryModel, request: Request):
     async def event_generator():
         for chunk in rag_answer_streaming(payload.question, roles=payload.roles):
+            if await request.is_disconnected():
+                break
             yield json.dumps({"content": chunk}) + "\n"
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -482,12 +527,14 @@ async def test_webhook():
 # ML — Entraînement du classifieur de pertinence
 # =============================================================
 
+_ML_DIR = Path(__file__).parent / "ml"
+
 ML_STEPS = {
-    "generate":  "/app/ml/generate_dataset.py",
-    "train":     "/app/ml/train_model.py",
-    "optimize":  "/app/ml/optimize_model.py",
-    "evaluate":  "/app/ml/evaluate_model.py",
-    "retrain":   "/app/ml/retrain_from_feedback.py",
+    "generate":  str(_ML_DIR / "generate_dataset.py"),
+    "train":     str(_ML_DIR / "train_model.py"),
+    "optimize":  str(_ML_DIR / "optimize_model.py"),
+    "evaluate":  str(_ML_DIR / "evaluate_model.py"),
+    "retrain":   str(_ML_DIR / "retrain_from_feedback.py"),
 }
 
 
@@ -495,10 +542,9 @@ ML_STEPS = {
 def ml_status():
     """Retourne l'état du modèle ML et les statistiques de feedback."""
     import sys
-    from pathlib import Path
     import joblib
 
-    dataset_dir = Path("/app/ml/dataset")
+    dataset_dir = _ML_DIR / "dataset"
     model_path  = dataset_dir / "best_model.pkl"
     meta_path   = dataset_dir / "model_meta.pkl"
     dataset_path = dataset_dir / "stevia_relevance_dataset.csv"
@@ -577,8 +623,7 @@ async def ml_run(step: str, request: Request):
 @app.delete("/ml/reset")
 def ml_reset():
     """Supprime dataset, modèles et feedbacks ML pour repartir de zéro."""
-    from pathlib import Path
-    dataset_dir = Path("/app/ml/dataset")
+    dataset_dir = _ML_DIR / "dataset"
     deleted = []
     for filename in ["stevia_relevance_dataset.csv", "best_model.pkl", "model_meta.pkl",
                      "optimized_random_forest.pkl", "train.csv", "test.csv"]:
