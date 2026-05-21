@@ -221,6 +221,21 @@ async def receive_feedback(payload: FeedbackModel):
         stevia_logger.error(f"[Feedback] Erreur mise à jour label : {e}")
         return {"status": "error", "message": str(e)}
 
+    # 👍 → label=1 dans stevia_intent_labels pour enrichir le classifieur d'intention
+    if label == 1:
+        try:
+            existing = db_exec(
+                "SELECT COUNT(*) FROM stevia_intent_labels WHERE question = :q",
+                {"q": payload.question[:500]}
+            ).scalar()
+            if not existing:
+                db_exec(
+                    "INSERT INTO stevia_intent_labels (question, label, source) VALUES (:q, 1, 'feedback')",
+                    {"q": payload.question[:500]}
+                )
+        except Exception as e:
+            stevia_logger.error(f"[Feedback] Erreur insertion intent label : {e}")
+
     # Réentraînement automatique si seuil atteint
     try:
         from ml.retrain_from_feedback import maybe_retrain
@@ -362,7 +377,8 @@ async def list_bookstack_books():
                 if not book_detail.ok:
                     continue
 
-                contents = book_detail.json().get("contents", [])
+                detail_data = book_detail.json()
+                contents = detail_data.get("contents", [])
                 page_count = sum(1 for c in contents if c.get("type") == "page")
                 for c in contents:
                     if c.get("type") == "chapter":
@@ -372,6 +388,8 @@ async def list_bookstack_books():
                     continue
 
                 book["page_count"] = page_count
+                if detail_data.get("updated_at"):
+                    book["updated_at"] = detail_data["updated_at"]
 
             except Exception as e:
                 stevia_logger.error(f"Erreur récupération livre {book['id']} : {e}")
@@ -431,16 +449,37 @@ async def bookstack_webhook(
 
     reindex_events = [
         "page_create", "page_update", "page_delete",
-        "chapter_create", "chapter_update", "chapter_delete", "book_update"
+        "chapter_create", "chapter_update", "chapter_delete",
+        "book_update", "book_create", "bookshelf_update"
     ]
 
     if event not in reindex_events:
         return {"status": "ignored", "event": event}
 
+    # shelf_update : on compare les livres de la shelf avec ceux déjà indexés
+    if event == "bookshelf_update":
+        shelf_id = related_item.get("id")
+        if not shelf_id:
+            return {"status": "ignored", "message": "shelf_id manquant"}
+        try:
+            shelf_data = requests.get(f"{BOOKSTACK_URL}/api/shelves/{shelf_id}", headers=get_bookstack_headers(), timeout=10).json()
+            if shelf_data.get("slug") != "sucre":
+                return {"status": "ignored", "message": "Shelf hors SUCRE"}
+            shelf_book_ids = {b["id"] for b in shelf_data.get("books", [])}
+            indexed_ids = {int(r["book_id"]) for r in db_exec("SELECT DISTINCT cmetadata->>'book_id' AS book_id FROM langchain_pg_embedding WHERE cmetadata->>'book_id' IS NOT NULL").fetchall()}
+            new_ids = shelf_book_ids - indexed_ids
+            results = []
+            for bid in new_ids:
+                r = await index_book(bid, force=True)
+                results.append(r)
+            return {"status": "success", "indexed": results}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     book_id = None
     if "book_id" in related_item:
         book_id = related_item["book_id"]
-    elif related_item.get("type") == "book":
+    elif event in ("book_create", "book_update") and "id" in related_item:
         book_id = related_item.get("id")
 
     try:
