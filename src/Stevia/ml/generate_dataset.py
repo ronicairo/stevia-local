@@ -130,6 +130,28 @@ def generate_question(chunk_text: str) -> str | None:
     return None
 
 
+# ─── Sauvegarde questions pour classifieur d'intention ────────────────────────
+def save_intent_question(question: str):
+    """Ajoute la question générée dans intent_questions.csv (label=1) si pas déjà présente."""
+    path = DATASET_DIR / "intent_questions.csv"
+    DATASET_DIR.mkdir(parents=True, exist_ok=True)
+
+    existing = set()
+    if path.exists():
+        with open(path, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                existing.add(row["question"].lower().strip())
+
+    if question.lower().strip() in existing:
+        return
+
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["question", "label"])
+        if not existing:
+            writer.writeheader()
+        writer.writerow({"question": question, "label": 1})
+
+
 # ─── Construction du dataset ───────────────────────────────────────────────────
 def build_dataset(max_chunks: int = 100) -> tuple[list[dict], list[int]]:
     chunks = load_sample_chunks(max_chunks)
@@ -155,6 +177,7 @@ def build_dataset(max_chunks: int = 100) -> tuple[list[dict], list[int]]:
             print(f"  ✗ Question dupliquée, ignorée : {question}")
             continue
         questions_seen.add(q_normalized)
+        save_intent_question(question)
 
         print(f"  ✓ Question : {question}")
 

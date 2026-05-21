@@ -266,11 +266,11 @@ def count_new_intent_labels_since_last_retrain() -> int:
         if last_retrain:
             count = conn.execute(text("""
                 SELECT COUNT(*) FROM stevia_intent_labels
-                WHERE source = 'auto' AND created_at > :ts
+                WHERE source IN ('auto', 'feedback') AND created_at > :ts
             """), {"ts": last_retrain}).scalar()
         else:
             count = conn.execute(text(
-                "SELECT COUNT(*) FROM stevia_intent_labels WHERE source = 'auto'"
+                "SELECT COUNT(*) FROM stevia_intent_labels WHERE source IN ('auto', 'feedback')"
             )).scalar()
 
     return count or 0
