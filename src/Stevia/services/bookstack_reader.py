@@ -20,7 +20,8 @@ def clean_html(html: str) -> str:
     # Préserve le gras en markdown
     html = re.sub(r'<(?:strong|b)[^>]*>(.*?)</(?:strong|b)>', r'**\1**', html, flags=re.IGNORECASE | re.DOTALL)
 
-    # Préserve les listes numérotées
+    # Préserve les listes — fusionne <li><p> pour éviter le • seul sur sa ligne
+    html = re.sub(r'<li[^>]*>\s*<p[^>]*>', r'\n• ', html)
     html = re.sub(r'<li[^>]*>\s*(\d+\.?\s*)', r'\n\1 ', html)
     html = re.sub(r'<li[^>]*>', r'\n• ', html)
 

@@ -23,6 +23,18 @@ from nltk.corpus import stopwords
 
 STOP_WORDS = set(stopwords.words('french'))
 
+try:
+    import spacy
+    _nlp = spacy.load("fr_core_news_sm", disable=["parser", "ner"])
+except (ImportError, OSError):
+    _nlp = None
+
+def _lemmatize(words: list[str]) -> set[str]:
+    if not _nlp or not words:
+        return set(words)
+    doc = _nlp(" ".join(words))
+    return {token.lemma_ for token in doc}
+
 DB_URL = os.getenv("DATABASE_URL")
 if not DB_URL:
     raise ValueError("DATABASE_URL non défini dans le .env")
@@ -75,9 +87,9 @@ def get_page_url(metadata: dict) -> str:
 
 # FONCTIONS UTILITAIRES RAG
 def extract_search_keywords(question: str) -> list[str]:
-    """Extrait les mots-clés de recherche (sans stop words ni apostrophes)."""
-    keywords = [w for w in question.lower().split() if len(w) >= 2 and w not in STOP_WORDS]
-    return [w for w in keywords if "'" not in w]
+    """Extrait les mots-clés de recherche, lemmatisés (sans stop words ni apostrophes)."""
+    raw = [w for w in question.lower().split() if len(w) >= 2 and w not in STOP_WORDS and "'" not in w]
+    return list(_lemmatize(raw)) if _nlp else raw
 
 
 def search_by_keywords(keywords: list[str], existing_docs: list) -> list[tuple]:
@@ -113,7 +125,8 @@ def search_by_keywords(keywords: list[str], existing_docs: list) -> list[tuple]:
 def rerank_documents(docs_with_scores: list, question: str, roles: list[str]) -> list[tuple]:
     """Applique le boost par rôle et titre/gras, puis trie."""
     reranked = []
-    question_words = set(w for w in question.lower().split() if len(w) > 3)
+    raw_q_words = [w for w in question.lower().split() if len(w) > 3]
+    question_words = _lemmatize(raw_q_words) if _nlp else set(raw_q_words)
 
     for doc, score in docs_with_scores:
         doc_roles = doc.metadata.get("roles", "all").split(",")
@@ -127,18 +140,21 @@ def rerank_documents(docs_with_scores: list, question: str, roles: list[str]) ->
 
         # Boost par titre/gras (décompose aussi les mots avec tiret ex: "aide-mémoire" → "aide","mémoire")
         title_words_str = doc.metadata.get("title_words", "")
-        title_words = set()
+        title_words_raw = set()
         for w in title_words_str.lower().split(","):
-            title_words.add(w)
+            title_words_raw.add(w)
             if "-" in w:
-                title_words.update(w.split("-"))
+                title_words_raw.update(w.split("-"))
 
         bold_words_str = doc.metadata.get("bold_words", "")
-        bold_words = set()
+        bold_words_raw = set()
         for w in bold_words_str.lower().split(","):
-            bold_words.add(w)
+            bold_words_raw.add(w)
             if "-" in w:
-                bold_words.update(w.split("-"))
+                bold_words_raw.update(w.split("-"))
+
+        title_words = _lemmatize(list(title_words_raw)) if _nlp else title_words_raw
+        bold_words = _lemmatize(list(bold_words_raw)) if _nlp else bold_words_raw
 
         title_matches = question_words & title_words
         bold_matches = question_words & bold_words
@@ -193,9 +209,14 @@ def build_context(docs_with_scores: list, best_page_id: str, search_keywords: li
     best_title = best_metadata.get("title", "Inconnu")
 
     for i, doc in enumerate(same_page_docs):
-        content = "\n".join(
-            " ".join(line.split()) for line in doc.page_content[:max_chars_per_doc].splitlines()
-        )
+        lines = []
+        for line in doc.page_content[:max_chars_per_doc].splitlines():
+            normalized = " ".join(line.split())
+            if normalized.startswith("•"):
+                lines.append(normalized)
+            elif normalized:
+                lines.append(normalized)
+        content = "\n".join(lines)
         content_hash = hash(content[:100])
 
         if content_hash in seen_content:
@@ -423,7 +444,6 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
             yield f"![image]({img_url})\n"
 
     if not is_rejection:
-        _log_intent_label(expanded_question, 1)
         source_url = get_page_url(best_metadata)
         if source_url:
             yield "\n"
