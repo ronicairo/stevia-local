@@ -13,6 +13,18 @@ from nltk.corpus import stopwords
 
 STOP_WORDS = set(stopwords.words('french'))
 
+try:
+    import spacy
+    _nlp = spacy.load("fr_core_news_sm", disable=["parser", "ner"])
+except (ImportError, OSError):
+    _nlp = None
+
+def _lemmatize(words: list[str]) -> list[str]:
+    if not _nlp or not words:
+        return words
+    doc = _nlp(" ".join(words))
+    return [token.lemma_ for token in doc]
+
 FEATURE_NAMES = [
     "cosine_score",
     "keyword_match_count",
@@ -27,11 +39,9 @@ FEATURE_NAMES = [
 
 
 def _question_keywords(question: str) -> list[str]:
-    """Mots significatifs de la question (sans stopwords, longueur >= 2)."""
-    return [
-        w for w in re.split(r'\W+', question.lower())
-        if len(w) >= 2 and w not in STOP_WORDS
-    ]
+    """Mots significatifs de la question, lemmatisés (sans stopwords, longueur >= 2)."""
+    raw = [w for w in re.split(r'\W+', question.lower()) if len(w) >= 2 and w not in STOP_WORDS]
+    return _lemmatize(raw)
 
 
 def extract_features(
@@ -70,8 +80,8 @@ def extract_features(
     chunk_length = len(doc_text)
 
     # --- 5. Correspondance titre ---
-    page_title = doc_metadata.get("title", "").lower()
-    title_match = int(any(w in page_title for w in keywords)) if keywords else 0
+    page_title_words = _lemmatize(doc_metadata.get("title", "").lower().split())
+    title_match = int(any(w in page_title_words for w in keywords)) if keywords else 0
 
     # --- 6. Correspondance rôle utilisateur ---
     doc_roles_raw = doc_metadata.get("roles", "all")

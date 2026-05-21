@@ -16,6 +16,7 @@ pgvector
 pypdf
 pymupdf
 nltk
+spacy
 scikit-learn
 pandas
 joblib
