@@ -60,7 +60,6 @@
                         <th class="text-center">Pages</th>
                         <th class="text-center">Statut</th>
                         <th>Indexé le</th>
-                        <th>Mis à jour (BookStack)</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>
@@ -77,28 +76,26 @@
                         {{ book.page_count ?? book.pages_count ?? '—' }}
                     </td>
                     <td class="text-center">
+                        <div class="d-flex flex-column align-items-center gap-1">
                         {% if book.is_indexed ?? book.indexed ?? false %}
                             <span class="badge bg-success">
                                 <i class="bi bi-check-circle me-1"></i>Indexé
                             </span>
+                            {% if book.needs_update ?? false %}
+                                <span class="badge bg-warning text-dark">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>À mettre à jour
+                                </span>
+                            {% endif %}
                         {% else %}
                             <span class="badge bg-secondary">
                                 <i class="bi bi-dash-circle me-1"></i>Non indexé
                             </span>
                         {% endif %}
+                        </div>
                     </td>
                     <td class="small text-muted">
                         {% if book.indexed_at is defined and book.indexed_at %}
-                            {{ book.indexed_at|date('d/m/Y H:i') }}
-                        {% else %}
-                            —
-                        {% endif %}
-                    </td>
-                    <td class="small text-muted">
-                        {% if book.updated_at is defined and book.updated_at %}
-                            {{ book.updated_at|date('d/m/Y H:i') }}
-                        {% elseif book.bookstack_updated_at is defined and book.bookstack_updated_at %}
-                            {{ book.bookstack_updated_at|date('d/m/Y H:i') }}
+                            {{ book.indexed_at|date('d/m/Y H:i', 'Europe/Paris') }}
                         {% else %}
                             —
                         {% endif %}
