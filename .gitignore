@@ -29,3 +29,4 @@ STEVIA-PROD/
 MEMOIRE-STEVIA/
 DOC-BOOKSTACK-HTML/
 stevia.sql
+src/Controller/SteviaController.php

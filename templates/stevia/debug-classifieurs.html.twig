@@ -1,0 +1,276 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Debug Classifieurs — Stevia{% endblock %}
+{% block page_title %}Pipeline Stevia — Debug classifieurs{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mt-1">
+    <ol class="breadcrumb mb-0 small">
+        <li class="breadcrumb-item"><a href="{{ path('home') }}">Accueil</a></li>
+        <li class="breadcrumb-item active">Stevia — Debug classifieurs</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+
+{# ── Formulaire ────────────────────────────────────────────────────────────── #}
+<div class="sucre-card mb-4">
+    <div class="sucre-card-header">
+        <i class="bi bi-search me-2"></i>Question à analyser
+    </div>
+    <div class="sucre-card-body">
+        <div class="input-group">
+            <input type="text" id="debug-question" class="form-control"
+                   placeholder="Ex : quels sont les objectifs de SUCRE ?"
+                   autofocus>
+            <button class="btn btn-primary" id="btn-debug" type="button">
+                <i class="bi bi-play-fill me-1"></i>Analyser
+            </button>
+        </div>
+        <div id="debug-error" class="alert alert-danger mt-3 d-none"></div>
+    </div>
+</div>
+
+{# ── Résultats (masqués jusqu'à l'appel) ──────────────────────────────────── #}
+<div id="debug-results" class="d-none">
+
+    {# Classifieur d'intention #}
+    <div class="sucre-card mb-4">
+        <div class="sucre-card-header d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-funnel me-2"></i>Classifieur d'intention</span>
+            <span id="intent-model" class="text-muted small font-monospace"></span>
+        </div>
+        <div class="sucre-card-body">
+            <div class="row align-items-center g-3">
+                <div class="col-auto">
+                    <span id="intent-badge" class="badge fs-6 px-3 py-2"></span>
+                </div>
+                <div class="col">
+                    <div class="mb-1 small text-muted d-flex justify-content-between">
+                        <span>Hors-domaine</span>
+                        <span>Dans le domaine</span>
+                    </div>
+                    <div class="progress" style="height: 22px;" title="">
+                        <div id="intent-bar-invalid" class="progress-bar bg-danger" role="progressbar"></div>
+                        <div id="intent-bar-valid" class="progress-bar bg-success" role="progressbar"></div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-1 small font-monospace">
+                        <span id="intent-proba-invalid" class="text-danger"></span>
+                        <span id="intent-proba-valid" class="text-success"></span>
+                    </div>
+                </div>
+            </div>
+            <div id="intent-rejection" class="alert alert-danger mt-3 mb-0 d-none">
+                <i class="bi bi-x-octagon me-2"></i>Pipeline arrêté ici — question rejetée par le classifieur d'intention. Le LLM n'est pas appelé.
+            </div>
+        </div>
+    </div>
+
+    {# Classifieur de pertinence #}
+    <div class="sucre-card">
+        <div class="sucre-card-header d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-sliders me-2"></i>Classifieur de pertinence</span>
+            <span id="seuil-label" class="text-muted small"></span>
+        </div>
+        <div class="sucre-card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0 small">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-center" style="width:42px" title="Position dans les résultats de recherche vectorielle">Rang</th>
+                            <th>Titre</th>
+                            <th>Livre</th>
+                            <th class="text-center" title="Score de similarité cosinus (0–1, plus c'est élevé mieux c'est)">Cosinus</th>
+                            <th class="text-center" title="Nombre de mots-clés de la question trouvés dans le chunk">Mots-clés</th>
+                            <th class="text-center" title="Ratio mots-clés trouvés / total mots-clés">Ratio KW</th>
+                            <th class="text-center" title="Longueur du chunk en caractères">Long.</th>
+                            <th class="text-center" title="1 si un mot-clé de la question apparaît dans le titre du chunk">Titre ✓</th>
+                            <th class="text-center" title="1 si le rôle utilisateur est autorisé à voir ce chunk">Rôle ✓</th>
+                            <th class="text-center" title="Longueur de la question en mots">Q. mots</th>
+                            <th class="text-center" title="ID du livre BookStack">Livre ID</th>
+                            <th class="text-center fw-semibold" title="Probabilité de pertinence selon le Random Forest (0–1)">% pertinent</th>
+                            <th class="text-center fw-semibold">Retenu</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chunks-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="sucre-card-footer text-muted small">
+            <i class="bi bi-info-circle me-1"></i>
+            9 features · Random Forest · seuil de pertinence : <strong id="seuil-value"></strong>
+        </div>
+    </div>
+
+    {# Contexte envoyé au LLM #}
+    <div class="sucre-card mt-4" id="bloc-context">
+        <div class="sucre-card-header">
+            <i class="bi bi-file-text me-2"></i>Contexte envoyé au LLM
+        </div>
+        <div class="sucre-card-body">
+            <pre id="context-sent" class="mb-0 small" style="white-space:pre-wrap;max-height:320px;overflow-y:auto;background:transparent;border:none;padding:0"></pre>
+        </div>
+    </div>
+
+    {# Réponse générée #}
+    <div class="sucre-card mt-4" id="bloc-response">
+        <div class="sucre-card-header">
+            <i class="bi bi-chat-left-text me-2"></i>Réponse générée par le LLM
+        </div>
+        <div class="sucre-card-body">
+            <div id="llm-response" class="small"></div>
+        </div>
+    </div>
+
+</div>
+
+{# Spinner #}
+<div id="debug-spinner" class="text-center py-5 d-none">
+    <div class="spinner-border text-primary" role="status"></div>
+    <p class="mt-2 text-muted">Analyse en cours…</p>
+</div>
+
+{% endblock %}
+
+{% block javascripts %}
+{{ parent() }}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const btn       = document.getElementById('btn-debug');
+    const input     = document.getElementById('debug-question');
+    const results   = document.getElementById('debug-results');
+    const spinner   = document.getElementById('debug-spinner');
+    const errBox    = document.getElementById('debug-error');
+
+    async function runDebug() {
+        const question = input.value.trim();
+        if (!question) return;
+
+        results.classList.add('d-none');
+        errBox.classList.add('d-none');
+        spinner.classList.remove('d-none');
+        btn.disabled = true;
+
+        try {
+            const resp = await fetch('{{ path('stevia_debug_classifieurs_run') }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question }),
+            });
+            const data = await resp.json();
+
+            if (!resp.ok || data.error) {
+                errBox.textContent = data.error || 'Erreur serveur';
+                errBox.classList.remove('d-none');
+                return;
+            }
+
+            renderResults(data);
+            results.classList.remove('d-none');
+        } catch (e) {
+            errBox.textContent = 'Erreur réseau : ' + e.message;
+            errBox.classList.remove('d-none');
+        } finally {
+            spinner.classList.add('d-none');
+            btn.disabled = false;
+        }
+    }
+
+    btn.addEventListener('click', runDebug);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') runDebug(); });
+
+    function renderResults(data) {
+        // ── Intent ──────────────────────────────────────────────────────────
+        const intent = data.intent || {};
+        const valid  = intent.valid !== false;
+
+        document.getElementById('intent-model').textContent = intent.model || '';
+
+        const badge = document.getElementById('intent-badge');
+        badge.textContent = valid ? '✓ Dans le domaine' : '✗ Hors domaine';
+        badge.className   = 'badge fs-6 px-3 py-2 ' + (valid ? 'bg-success' : 'bg-danger');
+
+        const pValid   = intent.proba_valid   != null ? intent.proba_valid   : (valid ? 1 : 0);
+        const pInvalid = intent.proba_invalid != null ? intent.proba_invalid : (valid ? 0 : 1);
+        const pct = v => Math.round(v * 100) + '%';
+
+        document.getElementById('intent-bar-valid').style.width    = pct(pValid);
+        document.getElementById('intent-bar-invalid').style.width  = pct(pInvalid);
+        document.getElementById('intent-proba-valid').textContent   = pct(pValid);
+        document.getElementById('intent-proba-invalid').textContent = pct(pInvalid);
+
+        const rejectionEl = document.getElementById('intent-rejection');
+        rejectionEl.classList.toggle('d-none', valid);
+
+        // ── Pertinence ──────────────────────────────────────────────────────
+        const seuil = data.seuil_pertinence ?? '?';
+        document.getElementById('seuil-label').textContent = 'Seuil : ' + seuil;
+        document.getElementById('seuil-value').textContent = seuil;
+
+        const tbody = document.getElementById('chunks-tbody');
+        tbody.innerHTML = '';
+
+        (data.chunks || []).forEach(chunk => {
+            const f  = chunk.features || {};
+            const ok = chunk.retenu;
+            const pct_rel = Math.round((chunk.proba_pertinent ?? 0) * 100);
+
+            const probaClass = pct_rel >= 70 ? 'text-success fw-semibold'
+                             : pct_rel >= 40 ? 'text-warning'
+                             : 'text-danger';
+
+            const tr = document.createElement('tr');
+            tr.className = ok ? 'table-success' : '';
+            tr.innerHTML = `
+                <td class="text-center text-muted">${f.rank_position ?? chunk.rank}</td>
+                <td class="fw-semibold" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                    title="${esc(chunk.title)}">${esc(chunk.title)}</td>
+                <td class="text-muted" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                    title="${esc(chunk.book)}">${esc(chunk.book)}</td>
+                <td class="text-center font-monospace">${fmt(f.cosine_score)}</td>
+                <td class="text-center">${f.keyword_match_count ?? '—'}</td>
+                <td class="text-center font-monospace">${fmt(f.keyword_match_ratio)}</td>
+                <td class="text-center">${f.chunk_length ?? '—'}</td>
+                <td class="text-center">${badge01(f.title_match)}</td>
+                <td class="text-center">${badge01(f.role_match)}</td>
+                <td class="text-center">${f.query_length ?? '—'}</td>
+                <td class="text-center text-muted">${f.book_id ?? '—'}</td>
+                <td class="text-center ${probaClass}">${pct_rel} %</td>
+                <td class="text-center">${ok
+                    ? '<span class="badge bg-success">Retenu</span>'
+                    : '<span class="badge bg-secondary">Écarté</span>'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // ── Contexte + réponse LLM ──────────────────────────────────────────
+        document.getElementById('context-sent').textContent = data.context_sent ?? '(aucun chunk retenu)';
+        document.getElementById('llm-response').innerHTML   = data.llm_response
+            ? renderMarkdown(data.llm_response)
+            : '<span class="text-muted fst-italic">Aucune réponse générée (aucun chunk retenu).</span>';
+    }
+
+    function renderMarkdown(text) {
+        return text
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/^- (.+)$/gm, '<li>$1</li>')
+            .replace(/(<li>.*<\/li>)/s, '<ul class="mb-0">$1</ul>')
+            .replace(/\n/g, '<br>');
+    }
+
+    function esc(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function fmt(v) {
+        return v != null ? Number(v).toFixed(3) : '—';
+    }
+    function badge01(v) {
+        return v ? '<span class="badge bg-success-subtle text-success border border-success-subtle">1</span>'
+                 : '<span class="badge bg-light text-muted border">0</span>';
+    }
+});
+</script>
+{% endblock %}

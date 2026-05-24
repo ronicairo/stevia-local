@@ -409,6 +409,37 @@ class SteviaController extends AbstractController
     }
 
     /**
+     * PAGE DEBUG CLASSIFIEURS (jury)
+     */
+    #[Route('/stevia/debug-classifieurs', name: 'stevia_debug_classifieurs', methods: ['GET'], options: ['expose' => true])]
+    public function debugClassifieurs(): Response
+    {
+        return $this->render('stevia/debug-classifieurs.html.twig');
+    }
+
+    #[Route('/stevia/debug-classifieurs/run', name: 'stevia_debug_classifieurs_run', methods: ['POST'], options: ['expose' => true])]
+    public function debugClassifieursRun(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+        $question = trim($data['question'] ?? '');
+
+        if (!$question) {
+            return $this->json(['error' => 'Question vide'], 400);
+        }
+
+        try {
+            $response = $this->client->request('POST', $this->apiStevia . '/debug/pipeline', [
+                'json'    => ['question' => $question, 'roles' => $this->getSteviaRoles()],
+                'timeout' => 120,
+            ]);
+            return $this->json($response->toArray(false));
+        } catch (Exception $e) {
+            $this->logger->error('Erreur debug pipeline', ['message' => $e->getMessage()]);
+            return $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * LOG ERREUR CLIENT (JS → Monolog stevia)
      */
     #[Route('/stevia/log/error', name: 'stevia_log_error', methods: ['POST'], options: ['expose' => true])]

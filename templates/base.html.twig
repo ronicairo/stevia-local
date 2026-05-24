@@ -120,6 +120,13 @@
                     </a>
                 </li>
 
+                <li class="sidebar-item {{ app.request.attributes.get('_route') == 'stevia_debug_classifieurs' ? 'active' : '' }}">
+                    <a href="{{ path('stevia_debug_classifieurs') }}" class="sidebar-link">
+                        <i class="bi bi-diagram-3"></i>
+                        <span>Debug classifieurs</span>
+                    </a>
+                </li>
+
                 <li class="sidebar-section-title">Administration</li>
 
                 <li class="sidebar-item">

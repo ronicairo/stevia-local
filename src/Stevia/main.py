@@ -700,6 +700,112 @@ async def ask_debug(payload: QueryModel):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@app.post("/debug/pipeline")
+async def debug_pipeline(payload: QueryModel):
+    """Retourne le résultat complet des deux classifieurs pour une question donnée."""
+    from services.rag_engine import get_vector_store, expand_question, rerank_documents, build_context, extract_search_keywords
+    from services.mistral_utils import refine_answer_streaming
+    from services.intent_classifier import _load_trained_model, _load_prototypes
+    from ml.extract_features import extract_features, FEATURE_NAMES
+    from ml.predict import _load_model, features_to_list, RELEVANCE_THRESHOLD
+    import numpy as np
+
+    question = payload.question
+    roles = payload.roles or ["user"]
+
+    # --- 1. Classifieur d'intention ---
+    intent_result = {"valid": True, "proba_valid": None, "model": "inconnu"}
+    try:
+        model_emb, valid_vecs, invalid_vecs = _load_prototypes()
+        q_vec = np.array(model_emb.embed_query(question))
+        trained_intent = _load_trained_model()
+        if trained_intent is not None:
+            proba = trained_intent.predict_proba(q_vec.reshape(1, -1))[0]
+            intent_result = {
+                "valid": bool(trained_intent.predict(q_vec.reshape(1, -1))[0]),
+                "proba_valid": round(float(proba[1]), 4),
+                "proba_invalid": round(float(proba[0]), 4),
+                "model": "LogisticRegression (intent_model.pkl)",
+            }
+        else:
+            max_valid = max(float(np.dot(q_vec, v) / (np.linalg.norm(q_vec) * np.linalg.norm(v))) for v in valid_vecs)
+            max_invalid = max(float(np.dot(q_vec, iv) / (np.linalg.norm(q_vec) * np.linalg.norm(iv))) for iv in invalid_vecs)
+            intent_result = {
+                "valid": max_valid >= max_invalid,
+                "proba_valid": round(max_valid, 4),
+                "proba_invalid": round(max_invalid, 4),
+                "model": "Fallback cosinus (prototypes)",
+            }
+    except Exception as e:
+        intent_result["error"] = str(e)
+
+    # Court-circuit si hors domaine
+    if not intent_result.get("valid", True):
+        return {
+            "question": question,
+            "expanded_question": None,
+            "intent": intent_result,
+            "chunks": [],
+            "seuil_pertinence": RELEVANCE_THRESHOLD,
+            "context_sent": None,
+            "llm_response": None,
+        }
+
+    # --- 2. Recherche vectorielle ---
+    expanded = expand_question(question)
+    store = get_vector_store()
+    raw_docs = store.similarity_search_with_score(expanded, k=12)
+    search_keywords = extract_search_keywords(expanded)
+    docs_with_scores = rerank_documents(raw_docs, question, roles)
+
+    # --- 3. Classifieur de pertinence sur chaque chunk ---
+    relevance_model = _load_model()
+    user_role = roles[0] if roles else "user"
+    chunks_debug = []
+    retained_docs = []
+    for rank, (doc, score, doc_roles) in enumerate(docs_with_scores, start=1):
+        features = extract_features(
+            question=question,
+            doc_text=doc.page_content,
+            doc_metadata=doc.metadata,
+            cosine_distance=score,
+            rank=rank,
+            user_role=user_role,
+        )
+        feat_vec = [features_to_list(features)]
+        proba_rel = float(relevance_model.predict_proba(feat_vec)[0][1])
+        prediction = int(proba_rel >= RELEVANCE_THRESHOLD)
+        chunks_debug.append({
+            "rank": rank,
+            "title": doc.metadata.get("title", "?"),
+            "book": doc.metadata.get("book_name", "?"),
+            "features": {k: features[k] for k in FEATURE_NAMES},
+            "proba_pertinent": round(proba_rel, 4),
+            "prediction": prediction,
+            "retenu": prediction == 1,
+        })
+        if prediction == 1:
+            retained_docs.append((doc, score, doc_roles))
+
+    # --- 4. Contexte + réponse LLM ---
+    context_sent = None
+    llm_response = None
+    if retained_docs:
+        best_page_id = retained_docs[0][0].metadata.get("page_id")
+        context_sent, _, _ = build_context(docs_with_scores, best_page_id, search_keywords)
+        llm_response = "".join(refine_answer_streaming(context_sent, expanded))
+
+    return {
+        "question": question,
+        "expanded_question": expanded if expanded != question else None,
+        "intent": intent_result,
+        "chunks": chunks_debug,
+        "seuil_pertinence": RELEVANCE_THRESHOLD,
+        "context_sent": context_sent,
+        "llm_response": llm_response,
+    }
+
+
 @app.post("/debug/chunks")
 async def debug_chunks(payload: QueryModel):
     from services.rag_engine import get_vector_store, expand_question
