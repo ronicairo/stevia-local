@@ -1,0 +1,4 @@
+# Force LF sur les scripts shell et Python de Stevia
+# Évite les CRLF Windows -> "bad interpreter" / "not a valid identifier"
+*.sh text eol=lf
+*.py text eol=lf

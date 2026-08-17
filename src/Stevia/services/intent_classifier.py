@@ -43,6 +43,13 @@ _VALID = [
     "c'est quoi les créances à monter en charge",
     "comment vérifier la date de détection de la créance en fonction du délai de régularisation du fichier csv",
     "à quoi sert la balise date_ar_med",
+    "comment fonctionne la balise AR",
+    "à quoi sert la balise AR",
+    "qu'est-ce que la balise AR",
+    "comment utiliser les balises dans un modèle sucre",
+    "quelles balises sont disponibles dans sucre",
+    "comment fonctionne la balise date envoi",
+    "liste des balises disponibles",
 ]
 
 _INVALID = [
@@ -146,6 +153,8 @@ def _load_trained_model():
     return None
 
 
+_SEED_BYPASS_THRESHOLD = 0.88
+
 def is_valid_question(question: str) -> bool:
     """
     Retourne True si la question ressemble à une vraie question SUCRE.
@@ -157,11 +166,18 @@ def is_valid_question(question: str) -> bool:
         model_emb, valid_vecs, invalid_vecs = _load_prototypes()
         q_vec = np.array(model_emb.embed_query(question))
 
+        # Garde-fou : très proche d'un seed valide → valide sans passer par le modèle
+        max_valid = max(_cosine(q_vec, v) for v in valid_vecs)
+        if max_valid >= _SEED_BYPASS_THRESHOLD:
+            return True
+
         trained = _load_trained_model()
         if trained is not None:
-            return bool(trained.predict(q_vec.reshape(1, -1))[0])
+            proba = trained.predict_proba(q_vec.reshape(1, -1))[0]
+            # classes_ = [0=invalid, 1=valid] ; seuil conservateur pour éviter les faux négatifs
+            proba_valid = float(proba[1])
+            return proba_valid >= 0.25
 
-        max_valid   = max(_cosine(q_vec, v)  for v in valid_vecs)
         max_invalid = max(_cosine(q_vec, iv) for iv in invalid_vecs)
         return max_valid >= max_invalid
 

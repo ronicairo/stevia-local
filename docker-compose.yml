@@ -109,7 +109,7 @@ services:
       # Classifieur ML — monté depuis src/Stevia/ml/
       - ./src/Stevia/ml:/app/ml
       # Logs persistants dans var/log/ (partagés avec Monolog Symfony)
-      - ./var/log:/app/var_log
+      - ./var/log:/app/var/log
 
 # =============================================================
 volumes:

@@ -1,4 +1,4 @@
-{% extends 'base.html.twig' %}
+ {% extends 'base.html.twig' %}
 
 {% block title %}Debug Classifieurs — Stevia{% endblock %}
 {% block page_title %}Pipeline Stevia — Debug classifieurs{% endblock %}
@@ -91,6 +91,7 @@
                             <th class="text-center" title="ID du livre BookStack">Livre ID</th>
                             <th class="text-center fw-semibold" title="Probabilité de pertinence selon le Random Forest (0–1)">% pertinent</th>
                             <th class="text-center fw-semibold">Retenu</th>
+                            <th class="text-center" style="width:42px" title="Voir le contenu du chunk">Chunk</th>
                         </tr>
                     </thead>
                     <tbody id="chunks-tbody">
@@ -104,10 +105,11 @@
         </div>
     </div>
 
-    {# Contexte envoyé au LLM #}
+    {# Contexte réellement utilisé (même chemin que la prod) #}
     <div class="sucre-card mt-4" id="bloc-context">
         <div class="sucre-card-header">
-            <i class="bi bi-file-text me-2"></i>Contexte envoyé au LLM
+            <i class="bi bi-file-text me-2"></i>Contexte réellement utilisé
+            <span id="context-mode-badge" class="badge bg-secondary ms-2" style="display:none"></span>
         </div>
         <div class="sucre-card-body">
             <pre id="context-sent" class="mb-0 small" style="white-space:pre-wrap;max-height:320px;overflow-y:auto;background:transparent;border:none;padding:0"></pre>
@@ -117,13 +119,31 @@
     {# Réponse générée #}
     <div class="sucre-card mt-4" id="bloc-response">
         <div class="sucre-card-header">
-            <i class="bi bi-chat-left-text me-2"></i>Réponse générée par le LLM
+            <i class="bi bi-chat-left-text me-2"></i><span id="response-header">Réponse générée</span>
         </div>
         <div class="sucre-card-body">
             <div id="llm-response" class="small"></div>
         </div>
     </div>
 
+</div>
+
+{# Modale contenu du chunk #}
+<div class="modal fade" id="chunk-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-file-earmark-text me-2"></i><span id="chunk-modal-title"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-muted small mb-2" id="chunk-modal-meta"></div>
+                <pre id="chunk-modal-content" class="small mb-0" style="white-space:pre-wrap;background:transparent;border:none;padding:0"></pre>
+            </div>
+        </div>
+    </div>
 </div>
 
 {# Spinner #}
@@ -211,8 +231,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const tbody = document.getElementById('chunks-tbody');
         tbody.innerHTML = '';
+        window._debugChunks = data.chunks || [];
 
-        (data.chunks || []).forEach(chunk => {
+        (data.chunks || []).forEach((chunk, idx) => {
             const f  = chunk.features || {};
             const ok = chunk.retenu;
             const pct_rel = Math.round((chunk.proba_pertinent ?? 0) * 100);
@@ -241,8 +262,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="text-center">${ok
                     ? '<span class="badge bg-success">Retenu</span>'
                     : '<span class="badge bg-secondary">Écarté</span>'}</td>
+                <td class="text-center">
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 btn-chunk"
+                            data-idx="${idx}" title="Voir le contenu du chunk">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </td>
             `;
             tbody.appendChild(tr);
+        });
+
+        tbody.querySelectorAll('.btn-chunk').forEach(b => {
+            b.addEventListener('click', () => showChunk(+b.dataset.idx));
         });
 
         // ── Contexte + réponse LLM ──────────────────────────────────────────
@@ -250,6 +281,35 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('llm-response').innerHTML   = data.llm_response
             ? renderMarkdown(data.llm_response)
             : '<span class="text-muted fst-italic">Aucune réponse générée (aucun chunk retenu).</span>';
+
+        // Badge du mode réellement utilisé (raw / reformulation) — celui de la prod
+        const modeBadge = document.getElementById('context-mode-badge');
+        const respHeader = document.getElementById('response-header');
+        if (data.answer_mode === 'raw') {
+            modeBadge.textContent = 'mode RAW (prod)';
+            modeBadge.style.display = '';
+            respHeader.textContent = 'Réponse générée (mode RAW — verbatim)';
+        } else if (data.answer_mode === 'reformulation') {
+            modeBadge.textContent = 'reformulation';
+            modeBadge.style.display = '';
+            respHeader.textContent = 'Réponse générée (reformulation LLM)';
+        } else {
+            modeBadge.style.display = 'none';
+            respHeader.textContent = 'Réponse générée';
+        }
+    }
+
+    let chunkModal = null;
+    function showChunk(idx) {
+        const chunk = (window._debugChunks || [])[idx];
+        if (!chunk) return;
+        document.getElementById('chunk-modal-title').textContent = chunk.title || '?';
+        document.getElementById('chunk-modal-meta').textContent =
+            `Rang ${chunk.rank} · ${chunk.book || '?'} · ${(chunk.content || '').length} caractères`;
+        document.getElementById('chunk-modal-content').textContent =
+            chunk.content || '(contenu vide)';
+        if (!chunkModal) chunkModal = new bootstrap.Modal(document.getElementById('chunk-modal'));
+        chunkModal.show();
     }
 
     function renderMarkdown(text) {

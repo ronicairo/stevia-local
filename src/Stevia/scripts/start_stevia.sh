@@ -53,11 +53,24 @@ else
   echo -e "${G}✅ Ollama démarré${N}"
 fi
 
-if ! ollama list 2>/dev/null | grep -q "${OLLAMA_MODEL}"; then
-  echo -e "${Y}📥 Téléchargement modèle ${OLLAMA_MODEL}...${N}"
-  ollama pull "${OLLAMA_MODEL}"
+if [[ "${RAW_MODE:-false}" == "true" ]] && [[ -n "${RAW_OLLAMA_MODEL:-}" ]]; then
+  # Mode RAW : décharger le modèle principal s'il est en mémoire
+  ollama stop "${OLLAMA_MODEL}" 2>/dev/null || true
+  # Seul le modèle RAW est nécessaire
+  if ! ollama list 2>/dev/null | grep -q "${RAW_OLLAMA_MODEL}"; then
+    echo -e "${Y}📥 Téléchargement modèle RAW ${RAW_OLLAMA_MODEL}...${N}"
+    ollama pull "${RAW_OLLAMA_MODEL}"
+  else
+    echo -e "${G}✅ Modèle RAW ${RAW_OLLAMA_MODEL} déjà présent${N}"
+  fi
 else
-  echo -e "${G}✅ Modèle ${OLLAMA_MODEL} déjà présent${N}"
+  # Mode normal : modèle principal
+  if ! ollama list 2>/dev/null | grep -q "${OLLAMA_MODEL}"; then
+    echo -e "${Y}📥 Téléchargement modèle ${OLLAMA_MODEL}...${N}"
+    ollama pull "${OLLAMA_MODEL}"
+  else
+    echo -e "${G}✅ Modèle ${OLLAMA_MODEL} déjà présent${N}"
+  fi
 fi
 
 # ================================================================

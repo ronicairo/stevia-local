@@ -120,6 +120,9 @@ def generate_question(chunk_text: str) -> str | None:
             timeout=45,
         )
         raw = resp.json().get("response", "").strip()
+        # Supprimer les blocs <think>...</think> (modèles reasoning type qwen2.5)
+        import re as _re
+        raw = _re.sub(r'<think>.*?</think>', '', raw, flags=_re.DOTALL).strip()
         # Garder seulement la première ligne non vide
         for line in raw.split("\n"):
             line = line.strip().strip('"').strip("'")

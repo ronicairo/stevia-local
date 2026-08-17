@@ -1,0 +1,314 @@
+STEVIA — RAG mode RAW + PARAGRAPHES CIBLÉS BORNÉS (RAG_PARA_BUDGET=6000)
+======================================================================
+
+### Q1. Quels sont les objectifs de Sucre ?
+(0.7s | source: PRESENTATION GENERALE DE L’OUTIL, Gestion des accès, Conditions de rapprochement entre le fichier CSV et SUCRE)
+
+Ses principes de construction répondent à l’objectif de la CNAM visant à créer au sein des organismes des pôles uniques de gestion des indus (amiable et contentieux).
+Ces objectifs sont notamment les suivants :
+
+----------------------------------------------------------------------
+
+### Q2. A quoi servent les échéances de suivi ?
+(3.4s | source: Echéances de suivi)
+
+Les échéances de suivi permettent de gérer et d'afficher des dates importantes liées aux créances
+
+[IMG]
+[IMG]
+• Paiements échelonnés sans mouvement (Ecran : paiement échelonné)
+[IMG]
+Critères pour déclencher l’échéance :
+- Créance suspendue pour "Paiement échelonné"
+- Paiement échelonné en cours (non annulé)
+- Date début de l'échelonnement supérieure à (date du jour - "delai_deb_ech")
+- Sans mouvement de types 'ENC', 'PCL', 'RPR' (sur la globalité de l’échelonnement) supérieur à (date du jour - "delai_recup_ech")
+Date d'échéance affichée = date début d’échelonnement + le délai figurant défini dans param fonctionnel : delai_deb_ech
+[IMG]
+- Date retour pôle non renseignée
+[IMG]
+Date d'échéance affichée = date envoi pôle + le délai figurant défini dans param fonctionnel : delai_suivi_envoi_pole
+• Pôle sans réponse (onglet : contestation)
+[IMG]
+Paramètre fonctionnel utilisé : delai_suivi_trans_pole
+- Créance suspendue pour "Contestation"
+- Date envoi au pôle renseignée ET inférieure à (date du jour - "delai_suivi_trans_pole")
+[IMG]
+• CRA sans réponse (onglet : contestation)
+[IMG]
+- Date envoi CRA renseignée ET inférieure à (date du jour - "delai_suivi_trans_cra")
+- Date retour CRA non renseignée
+[IMG]
+## Statistiques / Supervision / Clôture des comptes
+[IMG]
+[IMG]
+[IMG]
+
+----------------------------------------------------------------------
+
+### Q3. Quelles sont les en-têtes obligatoire du CSV dans les notifications en masse ?
+(1.2s | source: Profil SUCRE_NOTIF, Libellés de notification)
+
+Le fichier CSV doit obligatoirement contenir les en-têtes suivantes :
+• « **matricule-assure** » : ne doit pas contenir de virgule ou de point
+• « **prenom** »
+• « **nom** »
+• « **num-executant** » : doit contenir 9 chiffres
+• « **date-acte** » : format jj/mm/aaaa
+• « **montant-indu** » : caractère numérique et format de la cellule « Standard »
+• « **date-mandatement **» : format jj/mm/aaaa
+• « **num-facture** »
+• «** acte** » : ne doit pas contenir plus de 3 lettres
+• « **total** » : caractère numérique et format de la cellule « Standard »
+Afin d’ajouter un texte motif, il faudra créer un nouveau libellé notification et sélectionner « Oui » dans « Utilisé en notification en masse » :
+
+----------------------------------------------------------------------
+
+### Q4. Quels sont les conditions à respecter dans les notif en masse ?
+(1.1s | source: Profil SUCRE_NOTIF, Libellés de notification)
+
+Les instructions spécifiques pour une notification en masse doivent être suivies
+
+[IMG]
+Afin d’effectuer une notification en masse, les créances du CSV doivent **respecter certaines conditions** :
+• L’en-tête « num-executant » du fichier CSV doit correspondre au numéro débiteur
+• L’en-tête « total » du fichier CSV doit correspondre à la somme de la soustraction entre le montant initial et la part mutuel
+• La somme des « montant-indus » par débiteur doit être égale au « total » dans le CSV
+• Le numéro UGE doit correspondre au numéro UGE détection
+• Le solde de la créance doit être différent de 0.
+• La créance doit être de type échéance « Notification »
+• La catégorie débiteur doit être « ETA » ou « PS »
+• Chaque débiteur doit avoir une adresse renseignée en base
+• La date de mandatement doit être inférieure à la date de détection
+• La date de détection doit être supérieure ou égale à la date de régularisation
+Le fichier CSV doit obligatoirement contenir les en-têtes suivantes :
+
+----------------------------------------------------------------------
+
+### Q5. A quoi correspondent les créances < = 0.68% PSS sans mouvement ?
+(2.3s | source: Statistiques / Supervision / Clôture des comptes)
+
+• Demande de renvoi : date d’échéance
+• TJ : date d’échéance
+
+----------------------------------------------------------------------
+
+### Q6. A quelle h a lieu l’intégration de la journée comptable ?
+(1.7s | source: Intégration de la journée comptable)
+
+SUCRE intègre la journée comptable DETTE le soir à partir de 18:30, vous accédez à cette journée le lendemain matin.
+Dans le « Suivi des traitements automatiques », indiquez les filtres suivants :
+• Date de traitement : Jour ouvré précédent (J-1)
+• Controller : « EtatImport »
+• Message : « FICHIER ETAT DU »
+• Vous devez trouver une ligne comme ci-dessous qui vous indique la dernière date comptable intégrée.
+• Il se peut que vous ayez plus d’une ligne s’il y a eu un rattrapage de plusieurs journées comptables mais vous devez toujours trouver une date à J-1 ou plus si week-end et jours fériés.
+[IMG]
+• « Traitement historique et/ou reprise. IMPORTATION FICHIER MOUV ANNULEE, Fichier vide ! »
+**Où**
+• « Traitement de la date du : dd-mm-yyyy**. IMPORTATION FICHIER MOUV ANNULEE, Aucun fichier MOUV à traiter dans **nom du répertoire** »
+• Ce message apparaît lorsqu’il n’y a pas de fichier MOUV à traiter ** pour la date ** et que ce n’est ni un jour férié ni un week-end.
+• « IMPORTATION FICHIER MOUV ANNULEE, Aucun fichier MOUV à traiter dans nom du répertoire** ! »
+• Ce message apparaît lorsqu’il n’y a ** aucun fichier dans le répertoire SUCRE ** et que la prochaine date à importer ne tombe ni à jour férié ni un week-end.
+• « Traitement de la date du : **dd-mm-yyyy**
+
+----------------------------------------------------------------------
+
+### Q7. A quoi sert le champ « date envoi transmission pôle » ?
+(2.6s | source: Montée en charge, Profil SUCRE_RECOUV)
+
+[IMG]
+Le remplissage du champ « date manifestation débiteur » entraine la génération de l’échéance de suivi « manifestation débiteur sans réponse » sous certaines conditions (voir ci-dessous).
+[IMG]
+
+----------------------------------------------------------------------
+
+### Q8. A quoi sert le champ « date manifestation débiteur » ?
+(3.0s | source: Profil SUCRE_RECOUV)
+
+Le champ "date manifestation débiteur" entraîne la génération de quel échéance de suivi ?
+
+[IMG]
+Le remplissage du champ « date manifestation débiteur » entraine la génération de l’échéance de suivi « manifestation débiteur sans réponse » sous certaines conditions (voir ci-dessous).
+[IMG]
+
+----------------------------------------------------------------------
+
+### Q9. Quelles sont les etapes minimum que doit avoir un workflow ?
+(2.5s | source: Gestion des Workflow)
+
+**Un workflow doit contenir à minima deux étapes : « saisie notification » et « notification ».**
+[IMG]
+[IMG]
+[IMG]
+[IMG]
+Un workflow peut comporter autant d’étapes que souhaitées.
+
+----------------------------------------------------------------------
+
+### Q10. Qu’est-ce qu’un workflow ? Qu'est-ce que le calendrier ?
+(6.8s | source: Calendrier, Gestion des Workflow, Profil SUCRE_CONSULT)
+
+D'après la documentation, on peut en déduire que :
+- Un **workflow** est une procédure automatisée de gestion de la créance définie par une condition d’entrée (par exemple, catégorie du débiteur) et paramétrable selon différents critères comme le délai avant son déclenchement, le seuil de déclenchement, etc. Il permet de gérer les créances en fonction des spécificités de chaque cas.
+- Le **calendrier** est utilisé par l’application pour intégrer automatiquement les jours fériés et concerne uniquement les journées comptables sans production. Les utilisateurs peuvent ajouter, modifier ou créer des dates dans le calendrier selon leurs besoins.
+
+----------------------------------------------------------------------
+
+### Q11. Lors de la création ou modification d'une adresse débiteur, combien de caractères maximum doit faire le champ civilité ?
+(3.4s | source: Profil SUCRE_NOTIF, Gestion des Workflow, Profil SUCRE_RECOUV)
+
+Pour la création ou la modification d'une adresse débiteur dans SUCRE
+
+• La civilité doit faire au maximum **12 caractères**.
+
+----------------------------------------------------------------------
+
+### Q12. A quoi servent les libellés générique ?
+(3.0s | source: Libellés génériques, Libellés de notification)
+
+Les libellés génériques renseignent les listes déroulantes dans divers onglets du module de saisie gestion (dossier d’une créance).
+[IMG]
+[IMG]
+[IMG]
+Les onglets concernés par cette liste déroulante sont :
+
+----------------------------------------------------------------------
+
+### Q13. A quoi sert l’onglet aide mémoire ?
+(4.0s | source: —)
+
+D'après la documentation, on peut en déduire que l'onglet aide mémoire n'est pas mentionné dans les informations fournies. Cette information ne figure pas dans la documentation.
+
+----------------------------------------------------------------------
+
+### Q14. C’est quoi les libellés notifications ?
+(4.5s | source: Libellés de notification)
+
+Les libellés de notification sont utilisés pour faciliter la saisie de la notification du menu Notification / Créances à notifier.
+[IMG]
+• Pour **créer un libellé notification** cliquez sur le bouton prévu à cet effet.
+[IMG]
+dans la colonne « Modifier ».
+Si la catégorie de débiteur n’est pas renseignée, la donnée s’affiche dans la liste quel que soit le type de débiteur.
+Certains libellés sont **interdits à la modification** car ils sont fournis par la CNAM. Ils sont signalé par le symbole 
+[IMG]
+
+----------------------------------------------------------------------
+
+### Q15. A quoi sert l’épuration des données de la base ?
+(3.5s | source: Epuration des données de la base)
+
+L'épuration des données permet de supprimer les créances dont le dernier mouvement est supérieur à 5 ans et le solde à zéro
+
+Un traitement automatique mensuel supprime de la base les données remplissant les conditions suivantes :
+• Suppression de toutes les créances dont le dernier mouvement est supérieur à 5 ans et le solde à zéro. Donc les créances sont conservées 5 ans.
+• Dans le cas d'un regroupement de créances, c’est la date du dernier mouvement de la dernière créance soldée du regroupement, qui est prise en compte.
+
+----------------------------------------------------------------------
+
+### Q16. C’est quoi les créances à monter en charge ?
+(2.5s | source: Profil SUCRE_MEC – Montée en charge totale ou partielle, Statut de la montée en charge, Montée en charge)
+
+Ces créances sont listées dans l'application SUCRE après une montée en charge totale ou partielle
+
+Toutes les créances &lt; au 01/01/2019 se trouveront dans la liste des créances à monter en charge.
+Toutes les créances &gt;= au 01/01/2019 se trouveront dans la liste des créances à notifier.
+• A tout autre moment, lors de l’intégration d’une nouvelle nature de créance. Il s’agit dans ce cas d’une montée en charge partielle.
+
+----------------------------------------------------------------------
+
+### Q17. Comment puis-je vérifier la date de détection de la créance en fonction du délai de régularisation du fichier CSV ?
+(3.0s | source: Gestion des Workflow, Le fichier CSV extrait de FLUX TIERS, Annexe – Paramètres fonctionnels)
+
+La condition pour vérifier la date de détection de la créance est liée à la date de régularisation
+
+## Généralités sur les couleurs indicatives
+[IMG]
+[IMG]
+[IMG]
+[IMG]
+[IMG]
+[IMG]
+
+----------------------------------------------------------------------
+
+### Q18. Comment créer un workflow ?
+(3.0s | source: Gestion des Workflow, Profil SUCRE_CONSULT, Profil SUCRE_RECOUV)
+
+• Pour **créer un nouveau workflow** cliquez sur le bouton prévu à cet effet.
+[IMG]
+[IMG]
+[IMG]
+Pour **créer** ou **modifier une étape workflow** cliquez sur 
+[IMG]
+
+----------------------------------------------------------------------
+
+### Q19. Comment notifier une créance ?
+(3.0s | source: Profil SUCRE_NOTIF)
+
+[IMG]
+Cliquez sur le logo avec un « W » pour accéder à la notification d’un dossier.
+Le bouton en forme de bulle permet d’insérer un commentaire ordonnateur qui sera visible sur le parcours de la créance, dans l’onglet « Détails créance(s) ».
+[IMG]
+Plusieurs boutons d’actions sont à disposition sur cet écran :
+• **Réinitialiser :** Cette action vous permet de neutraliser l'envoi de la notification suite à votre saisie. elle ne peut être effectuée que le jour même de la saisie de la notification, cette action supprimera l’historique de la créance.
+• **Retour début WF :** cette action permet de revenir directement à l’étape Saisie Notification tout en conservant l’historique de la créance.
+Le retour à l’étape initiale s’effectue, et la créance est à nouveau disponible dans les créances à notifier.
+[IMG]
+[IMG]
+[IMG]
+[IMG]
+Pour supprimer l’échéance d’une ou plusieurs créances sélectionnez, la ou les lignes correspondantes en cliquant dessus. Puis, cliquez sur le bouton de suppression. Une confirmation vous sera alors demandée.
+## Pochette dématérialisée
+mais en glissant sur le logo 
+[IMG]
+
+----------------------------------------------------------------------
+
+### Q20. A quoi correspond la date_der_ope ?
+(2.7s | source: Gestion des Workflow, Profil SUCRE_NOTIF, Annexe – Paramètres fonctionnels)
+
+La donne une explication de ce paramètre
+
+**date_der_ope** : Date de dernière opération comptable sur la créance — ‘2017-01-12’
+
+----------------------------------------------------------------------
+
+### Q21. comment reconnaitre les echéances qui sont supprimés et recalculer tout les jours ?
+(3.1s | source: Echéances de suivi)
+
+Les échéances ayant cette icone sont supprimées et recalculées tous les jours dans les traitements du soir
+
+[IMG]
+Les échéances ayant cette icone sont supprimées et recalculées tous les jours dans les traitements du soir. Elles sont aussi recalculées à la validation des onglets de gestion (mais pas supprimées, il faudra attendre le lendemain).
+[IMG]
+
+----------------------------------------------------------------------
+
+### Q22. comment fonctionne la balise AR ?
+(2.6s | source: LISTE DES BALISES DE L’APPLICATION, Profil SUCRE_RECOUV, Annexe – Paramètres fonctionnels)
+
+Pour les courriers automatiques issus des WORFLOWS, la balise sera renseignée ou non en fonction du seuil_ar indiqué dans l’étape.
+- Accusé réception courrier BdF
+- Exécution plan
+- Mise en demeure non-respect plan
+- Non présence à audience
+- Contrainte
+- Biennale
+
+----------------------------------------------------------------------
+
+### Q23. comment voir un paramètre d'une étape wf
+(2.8s | source: Gestion des Workflow, Profil SUCRE_RECOUV)
+
+**IMPORTANT : La saisie de la notification est la première étape de tout workflow. Le libellé de cette étape doit obligatoirement commencer par : « saisie notification » ou « Saisie notification » et ne contenir qu’un seul espace entre saisie et notification.**
+[IMG]
+[IMG]
+[IMG]
+[IMG]
+[IMG]
+
+----------------------------------------------------------------------
+

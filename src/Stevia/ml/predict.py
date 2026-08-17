@@ -89,3 +89,27 @@ def predict_relevance(
         return [(best[0], best[1], best[2])]
 
     return [(d, s, r) for d, s, r, p in filtered]
+
+
+def drop_low_relevance(question: str, docs_with_scores: list, roles: list[str],
+                       drop_threshold: float = 0.15):
+    """Retire les chunks FRANCHEMENT non pertinents (proba < drop_threshold) SANS
+    réordonner : préserve l'ordre du rerank. Le classifieur ML sert alors de filtre de
+    bruit (rôle actif, sûr) sans décider quelle page est la meilleure.
+    Retourne (survivors, has_relevant) : survivors = docs gardés (ordre rerank) ;
+    has_relevant = True si au moins un chunk atteint RELEVANCE_THRESHOLD (sinon → rejet)."""
+    model     = _load_model()
+    user_role = roles[0] if roles else "user"
+    survivors = []
+    has_relevant = False
+    for rank, (doc, score, doc_roles) in enumerate(docs_with_scores, start=1):
+        features = extract_features(
+            question=question, doc_text=doc.page_content, doc_metadata=doc.metadata,
+            cosine_distance=score, rank=rank, user_role=user_role,
+        )
+        p = float(model.predict_proba([features_to_list(features)])[0][1])
+        if p >= RELEVANCE_THRESHOLD:
+            has_relevant = True
+        if p >= drop_threshold:
+            survivors.append((doc, score, doc_roles))
+    return survivors, has_relevant

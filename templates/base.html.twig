@@ -127,6 +127,13 @@
                     </a>
                 </li>
 
+                <li class="sidebar-item {{ app.request.attributes.get('_route') == 'stevia_cache' ? 'active' : '' }}">
+                    <a href="{{ path('stevia_cache') }}" class="sidebar-link">
+                        <i class="bi bi-database-check"></i>
+                        <span>Cache réponses</span>
+                    </a>
+                </li>
+
                 <li class="sidebar-section-title">Administration</li>
 
                 <li class="sidebar-item">
@@ -254,7 +261,7 @@ document.getElementById('sidebarToggle')?.addEventListener('click', () => {
 <script>window.STEVIA_ROLE = "{{ app.session.get('stevia_role', 'user') }}";</script>
 <script>window.STEVIA_USER = "Roni Cairo";</script>
 {# Stevia widget JS #}
-<script src="{{ asset('js/chatbot.js') }}"></script>
+<script src="{{ asset('js/chatbot.js') }}?v={{ 'now'|date('U') }}"></script>
 
 {% block javascripts %}{% endblock %}
             {{ encore_entry_script_tags('app') }}

@@ -59,7 +59,7 @@
             <div class="stat-card-body">
                 <div id="statFbValue" class="stat-card-value">{{ status.feedback_labeled ?? 0 }}</div>
                 <div class="stat-card-label">Feedbacks étiquetés</div>
-                <small id="statFbPending" class="text-muted">{{ status.feedback_pending ?? 0 }} en attente</small>
+                <small id="statFbPending" class="text-muted">{{ status.feedback_not_trained ?? 0 }} non pris en compte</small>
             </div>
         </div>
     </div>
@@ -243,7 +243,7 @@
             const fbVal     = document.getElementById('statFbValue');
             const fbPending = document.getElementById('statFbPending');
             if (fbVal)     fbVal.textContent     = data.feedback_labeled ?? 0;
-            if (fbPending) fbPending.textContent = (data.feedback_pending ?? 0) + ' en attente';
+            if (fbPending) fbPending.textContent = (data.feedback_not_trained ?? 0) + ' non pris en compte';
 
             // Dernier entraînement
             const lastTrain = document.getElementById('lastTrainAt');

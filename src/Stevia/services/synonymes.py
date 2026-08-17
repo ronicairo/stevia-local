@@ -34,8 +34,26 @@ SYNONYMES = {
     "mec": "montée en charge"
 }
 
+import re
+
+def _normalize_interrogative(text: str) -> str:
+    """Réinsère les tirets manquants dans les formes interrogatives françaises.
+    'existe t il' → 'existe-t-il', 'a t elle' → 'a-t-elle'
+    """
+    # verbe + t + pronom (euphonique) : "existe t il" → "existe-t-il"
+    text = re.sub(
+        r'\b(\w+)\s+t[\s-](il|elle|on|ils|elles)\b',
+        r'\1-t-\2',
+        text,
+        flags=re.IGNORECASE
+    )
+    return text
+
+
 def expand_question(question: str) -> str:
-    """Remplace les raccourcis par leurs synonymes."""
+    """Normalise et remplace les raccourcis par leurs synonymes."""
+    question = _normalize_interrogative(question)
+
     words = question.split()
     expanded_words = []
 

@@ -1,0 +1,133 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Cache des réponses{% endblock %}
+{% block page_title %}Cache des réponses{% endblock %}
+
+{% block content %}
+
+{% if cache.enabled is defined and not cache.enabled %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    Cache indisponible : la base de données n'est pas joignable.
+</div>
+{% endif %}
+
+<p class="text-muted small mb-4">
+    Un 👍 utilisateur <strong>met la réponse en cache</strong> (resservie instantanément
+    aux questions quasi identiques) ; un 👎 la <strong>retire</strong> automatiquement.
+    Vous pouvez aussi retirer ici une réponse à la main si elle s'avère incorrecte.
+    {% if cache.threshold is defined %}
+        <br>Seuil de similarité : <strong>{{ cache.threshold }}</strong> (une question doit
+        être quasi identique à une réponse en cache pour être resservie).
+    {% endif %}
+</p>
+
+{# ── Compteur ──────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card h-100">
+            <div class="stat-card-icon" style="background: #19875422; color: #198754">
+                <i class="bi bi-database-check"></i>
+            </div>
+            <div class="stat-card-body">
+                <div id="statApproved" class="stat-card-value">{{ cache.approved|default([])|length }}</div>
+                <div class="stat-card-label">Réponses en cache</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── En cache ──────────────────────────────────────────────── #}
+<div class="sucre-card">
+    <div class="sucre-card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-database-check me-2"></i> Réponses en cache (servies aux utilisateurs)</span>
+        <button class="btn btn-sm btn-outline-secondary py-0" id="btnRefresh" title="Rafraîchir">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+    </div>
+    <div class="sucre-card-body">
+        <div id="approvedList"></div>
+        <div id="approvedEmpty" class="text-muted small d-none">Aucune réponse en cache pour l'instant.</div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block javascripts %}
+<script>
+(function () {
+    const approvedList  = document.getElementById('approvedList');
+    const approvedEmpty = document.getElementById('approvedEmpty');
+    const statApproved  = document.getElementById('statApproved');
+
+    function fmtDate(s) {
+        if (!s) return '';
+        return s.slice(0, 19).replace('T', ' ');
+    }
+
+    // Retire les blocs HTML source/related pour un aperçu texte lisible
+    function answerPreview(ans) {
+        let t = (ans || '').replace(/<div class="stevia-(source|related)[\s\S]*$/i, '');
+        t = t.replace(/!\[image\]\([^)]*\)/g, '🖼');
+        return t.trim();
+    }
+
+    function makeCard(entry) {
+        const card = document.createElement('div');
+        card.className = 'border rounded p-3 mb-2';
+        card.style.background = '#f8f9fa';
+
+        const q = document.createElement('div');
+        q.className = 'fw-semibold mb-1';
+        q.textContent = entry.question;
+        card.appendChild(q);
+
+        const meta = document.createElement('div');
+        meta.className = 'text-muted mb-2';
+        meta.style.fontSize = '0.72rem';
+        meta.textContent = `rôles : ${entry.roles || '—'} · posée ${entry.hits}× · en cache depuis le ${fmtDate(entry.approved_at)}`;
+        card.appendChild(meta);
+
+        const ansBox = document.createElement('pre');
+        ansBox.style.cssText = 'background:#fff;border:1px solid #e5e8ee;border-radius:6px;padding:8px;'
+            + 'font-size:0.75rem;max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;margin:0 0 8px 0;';
+        ansBox.textContent = answerPreview(entry.answer);
+        card.appendChild(ansBox);
+
+        const del = document.createElement('button');
+        del.className = 'btn btn-sm btn-outline-danger';
+        del.innerHTML = '<i class="bi bi-trash3 me-1"></i>Retirer du cache';
+        del.onclick = () => remove(entry.id, del, 'Retirer cette réponse du cache ?');
+        card.appendChild(del);
+        return card;
+    }
+
+    async function load() {
+        try {
+            const r = await fetch('/stevia/cache/list');
+            const data = await r.json();
+            const appr = data.approved || [];
+
+            statApproved.textContent = appr.length;
+            approvedList.innerHTML = '';
+            appr.forEach(e => approvedList.appendChild(makeCard(e)));
+            approvedEmpty.classList.toggle('d-none', appr.length > 0);
+        } catch (e) {
+            console.error('Erreur chargement cache', e);
+        }
+    }
+
+    async function remove(id, btn, msg) {
+        if (!confirm(msg)) return;
+        btn.disabled = true;
+        try {
+            await fetch(`/stevia/cache/${id}`, { method: 'DELETE' });
+            await load();
+        } catch (e) { btn.disabled = false; }
+    }
+
+    document.getElementById('btnRefresh').addEventListener('click', load);
+    load();
+})();
+</script>
+{% endblock %}

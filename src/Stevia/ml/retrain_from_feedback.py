@@ -23,7 +23,7 @@ if not train_logger.handlers:
             dt = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
             return f"[{dt}] {record.name}.{record.levelname}: {record.getMessage()}"
 
-    _log_dir = os.getenv("STEVIA_LOG_DIR", "/app/var_log")
+    _log_dir = os.getenv("STEVIA_LOG_DIR", "/app/var/log")
     os.makedirs(_log_dir, exist_ok=True)
     _log_date = datetime.now().strftime("%Y-%m-%d")
     _h = logging.FileHandler(os.path.join(_log_dir, f"stevia_training-{_log_date}.log"))
@@ -197,18 +197,29 @@ def retrain_intent_classifier() -> dict:
             "SELECT question, label FROM stevia_intent_labels"
         )).fetchall()
 
-    if len(rows) < 10:
-        train_logger.info(f"[IntentRetrain] Pas assez de données ({len(rows)} < 10). Ignoré.")
-        return {}
+    # Seeds = vérité terrain absolue, ils écrasent les labels BDD conflictuels
+    from services.intent_classifier import _VALID as _SEEDS_VALID, _INVALID as _SEEDS_INVALID
+    import re as _re
+    def _norm(s: str) -> str:
+        return _re.sub(r'[^\w\s]', '', s.lower().strip())
 
-    questions = [r[0] for r in rows]
-    y = np.array([int(r[1]) for r in rows])
+    seed_set_norm = {_norm(q) for q in _SEEDS_VALID + _SEEDS_INVALID}
+
+    # DB : on exclut les entrées qui correspondent (après normalisation) à un seed
+    db_filtered = [(r[0], int(r[1])) for r in rows if _norm(r[0]) not in seed_set_norm]
+
+    questions = [q for q, _ in db_filtered] + _SEEDS_VALID + _SEEDS_INVALID
+    y_list    = [l for _, l in db_filtered] + [1] * len(_SEEDS_VALID) + [0] * len(_SEEDS_INVALID)
+    y = np.array(y_list)
+
+    n_overridden = len(rows) - len(db_filtered)
+    train_logger.info(f"[IntentRetrain] {len(db_filtered)} DB ({n_overridden} écrasés par seeds) + {len(_SEEDS_VALID)+len(_SEEDS_INVALID)} seeds = {len(questions)} exemples")
 
     if len(set(y)) < 2:
         train_logger.info("[IntentRetrain] Une seule classe présente. Ignoré.")
         return {}
 
-    train_logger.info(f"[IntentRetrain] {len(rows)} exemples ({sum(y==1)} valides, {sum(y==0)} invalides). Calcul embeddings...")
+    train_logger.info(f"[IntentRetrain] {len(questions)} exemples ({sum(y==1)} valides, {sum(y==0)} invalides). Calcul embeddings...")
     _host = os.getenv("OLLAMA_HOST", "127.0.0.1")
     emb_model = OllamaEmbeddings(
         model="qwen3-embedding:0.6b",
@@ -291,8 +302,8 @@ def maybe_retrain() -> bool:
     # Classifieur pertinence — déclenché par les feedbacks
     try:
         n = count_new_feedbacks_since_last_retrain()
-        train_logger.info(f"[Retrain] {n} feedback(s) depuis le dernier entraînement (seuil={RETRAIN_THRESHOLD})")
         if n >= RETRAIN_THRESHOLD:
+            train_logger.info(f"[Retrain] Seuil atteint ({n}/{RETRAIN_THRESHOLD}) — réentraînement...")
             retrain()
             did_retrain = True
     except Exception as e:
@@ -301,8 +312,8 @@ def maybe_retrain() -> bool:
     # Classifieur intent — déclenché par les questions auto-labélisées
     try:
         n_intent = count_new_intent_labels_since_last_retrain()
-        train_logger.info(f"[IntentRetrain] {n_intent} label(s) auto depuis le dernier entraînement (seuil={INTENT_RETRAIN_THRESHOLD})")
         if n_intent >= INTENT_RETRAIN_THRESHOLD:
+            train_logger.info(f"[IntentRetrain] Seuil atteint ({n_intent}/{INTENT_RETRAIN_THRESHOLD}) — réentraînement...")
             retrain_intent_classifier()
             did_retrain = True
     except Exception as e:
@@ -315,8 +326,15 @@ if __name__ == "__main__":
     if not DB_URL:
         train_logger.error("DATABASE_URL non défini.")
         sys.exit(1)
-    result = retrain()
-    if result:
-        train_logger.info(f"[Retrain] Terminé : {result}")
+    if "--intent" in sys.argv:
+        result = retrain_intent_classifier()
+        if result:
+            train_logger.info(f"[IntentRetrain] Terminé : {result}")
+        else:
+            train_logger.info("[IntentRetrain] Aucun réentraînement effectué.")
     else:
-        train_logger.info("[Retrain] Aucun réentraînement effectué.")
+        result = retrain()
+        if result:
+            train_logger.info(f"[Retrain] Terminé : {result}")
+        else:
+            train_logger.info("[Retrain] Aucun réentraînement effectué.")

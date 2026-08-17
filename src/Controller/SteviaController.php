@@ -16,24 +16,19 @@ use Symfony\Contracts\Cache\ItemInterface;
 
 class SteviaController extends AbstractController
 {
-    private HttpClientInterface $client;
-    private string $apiStevia;
+    // Loggers non promus : noms de propriétés conservés, paramètres = canaux Monolog (autowiring)
     private LoggerInterface $logger;
     private LoggerInterface $trainingLogger;
-    private CacheInterface $cache;
 
     public function __construct(
-        HttpClientInterface $client,
-        string $apiStevia,
+        private readonly HttpClientInterface $client,
+        private readonly string $apiStevia,
         LoggerInterface $steviaLogger,
         LoggerInterface $steviaTrainingLogger,
-        CacheInterface $cache
+        private readonly CacheInterface $cache,
     ) {
-        $this->client          = $client;
-        $this->apiStevia       = $apiStevia;
-        $this->logger          = $steviaLogger;
-        $this->trainingLogger  = $steviaTrainingLogger;
-        $this->cache           = $cache;
+        $this->logger         = $steviaLogger;
+        $this->trainingLogger = $steviaTrainingLogger;
     }
 
     /**
@@ -57,6 +52,7 @@ class SteviaController extends AbstractController
 
         return new StreamedResponse(
             function () use ($payload, $roles) {
+                set_time_limit(0);
                 try {
                     $response = $this->client->request(
                         'POST',
@@ -72,15 +68,14 @@ class SteviaController extends AbstractController
                     );
 
                     foreach ($this->client->stream($response) as $chunk) {
-                        if ($chunk->isLast()) {
-                            break;
-                        }
-
                         $content = $chunk->getContent();
                         if (!empty($content)) {
                             echo $content;
                             if (ob_get_level() > 0) ob_flush();
                             flush();
+                        }
+                        if ($chunk->isLast()) {
+                            break;
                         }
                     }
 
@@ -125,8 +120,10 @@ class SteviaController extends AbstractController
     }
 
     #[Route('/stevia/index/book/{bookId}', name: 'stevia_index_book', methods: ['POST'], options: ['expose' => true])]
-    public function indexBook(int $bookId): JsonResponse
+    public function indexBook(int $bookId, Request $request): JsonResponse
     {
+        // Mode silencieux : appelé en boucle par "indexer tout" → pas de flash unitaire
+        $silent = $request->query->getBoolean('silent');
         try {
             $response = $this->client->request(
                 'POST',
@@ -138,22 +135,48 @@ class SteviaController extends AbstractController
             $bookName = $data['book_name'] ?? 'Document';
 
             if (($data['status'] ?? '') === 'indexed') {
-                $this->addFlash('success', sprintf('Le livre "%s" a été indexé avec succès.', $bookName));
+                if (!$silent) $this->addFlash('success', sprintf('Le livre "%s" a été indexé avec succès.', $bookName));
                 return new JsonResponse(['status' => 'success']);
             }
 
             if (($data['status'] ?? '') === 'skipped') {
-                $this->addFlash('info', sprintf('Le livre "%s" est déjà à jour.', $bookName));
+                if (!$silent) $this->addFlash('info', sprintf('Le livre "%s" est déjà à jour.', $bookName));
                 return new JsonResponse(['status' => 'success']);
             }
 
-            $this->addFlash('danger', sprintf('Erreur lors de l\'indexation du livre "%s".', $bookName));
+            if (!$silent) $this->addFlash('danger', sprintf('Erreur lors de l\'indexation du livre "%s".', $bookName));
             return new JsonResponse(['status' => 'error'], 400);
 
         } catch (Exception $e) {
             $this->logger->error('Erreur indexation livre', ['book_id' => $bookId, 'message' => $e->getMessage()]);
-            $this->addFlash('danger', 'Erreur technique : ' . $e->getMessage());
+            if (!$silent) $this->addFlash('danger', 'Erreur technique : ' . $e->getMessage());
             return new JsonResponse(['status' => 'error'], 500);
+        }
+    }
+
+    // Message global de fin d'indexation (appelé une fois par "indexer tout")
+    #[Route('/stevia/index/all/done', name: 'stevia_index_all_done', methods: ['POST'], options: ['expose' => true])]
+    public function indexAllDone(Request $request): JsonResponse
+    {
+        $ok     = $request->query->getInt('ok');
+        $errors = $request->query->getInt('errors');
+        if ($errors > 0) {
+            $this->addFlash('warning', sprintf('Indexation terminée : %d livre(s) indexé(s), %d en erreur.', $ok, $errors));
+        } else {
+            $this->addFlash('success', sprintf('Indexation terminée : %d livre(s) indexé(s).', $ok));
+        }
+        return new JsonResponse(['status' => 'success']);
+    }
+
+    // Livres en cours d'indexation (pour le polling de la page d'indexation)
+    #[Route('/stevia/index/status', name: 'stevia_index_status', methods: ['GET'], options: ['expose' => true])]
+    public function indexStatus(): JsonResponse
+    {
+        try {
+            $response = $this->client->request('GET', $this->apiStevia . '/index/status', ['timeout' => 5]);
+            return new JsonResponse($response->toArray(false));
+        } catch (Exception $e) {
+            return new JsonResponse(['indexing' => []]);
         }
     }
 
@@ -440,6 +463,46 @@ class SteviaController extends AbstractController
     }
 
     /**
+     * CACHE Q/R — page de gestion (réponses en cache, retrait manuel)
+     */
+    #[Route('/stevia/cache', name: 'stevia_cache', methods: ['GET'], options: ['expose' => true])]
+    public function cacheIndex(): Response
+    {
+        $cache = ['approved' => [], 'enabled' => false];
+        try {
+            $response = $this->client->request('GET', $this->apiStevia . '/cache/list', ['timeout' => 5]);
+            $cache = $response->toArray(false);
+        } catch (Exception $e) {
+            $this->logger->error('Erreur cache list', ['message' => $e->getMessage()]);
+        }
+        return $this->render('stevia/cache.html.twig', ['cache' => $cache]);
+    }
+
+    #[Route('/stevia/cache/list', name: 'stevia_cache_list', methods: ['GET'], options: ['expose' => true])]
+    public function cacheList(): JsonResponse
+    {
+        try {
+            $response = $this->client->request('GET', $this->apiStevia . '/cache/list', ['timeout' => 10]);
+            return $this->json($response->toArray(false));
+        } catch (Exception $e) {
+            return $this->json(['proposed' => [], 'approved' => [], 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    #[Route('/stevia/cache/{id}', name: 'stevia_cache_delete', methods: ['DELETE'], options: ['expose' => true], requirements: ['id' => '\d+'])]
+    public function cacheDelete(int $id): JsonResponse
+    {
+        try {
+            $response = $this->client->request('DELETE', sprintf('%s/cache/%d', $this->apiStevia, $id), ['timeout' => 10]);
+            $this->trainingLogger->info('Cache Q/R : entrée supprimée', ['id' => $id]);
+            return $this->json($response->toArray(false));
+        } catch (Exception $e) {
+            $this->logger->error('Erreur suppression cache', ['message' => $e->getMessage()]);
+            return $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * LOG ERREUR CLIENT (JS → Monolog stevia)
      */
     #[Route('/stevia/log/error', name: 'stevia_log_error', methods: ['POST'], options: ['expose' => true])]
@@ -473,9 +536,11 @@ class SteviaController extends AbstractController
 
     private function formatErrorMessage(Exception $e): string
     {
-        if (str_contains($e->getMessage(), 'timeout')) return 'Timeout atteint.';
-        if (str_contains($e->getMessage(), 'Could not resolve host')) return 'Serveur Python inaccessible.';
-        return 'Erreur : ' . $e->getMessage();
+        return match (true) {
+            str_contains($e->getMessage(), 'timeout') => 'Timeout atteint.',
+            str_contains($e->getMessage(), 'Could not resolve host') => 'Serveur Python inaccessible.',
+            default => 'Erreur : ' . $e->getMessage(),
+        };
     }
 
     private function getSteviaRoles(): array

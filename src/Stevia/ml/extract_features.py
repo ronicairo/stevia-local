@@ -39,9 +39,12 @@ FEATURE_NAMES = [
 
 
 def _question_keywords(question: str) -> list[str]:
-    """Mots significatifs de la question, lemmatisés (sans stopwords, longueur >= 2)."""
+    """Mots significatifs de la question, lemmatisés (sans stopwords, longueur >= 2).
+    Les identifiants techniques (avec underscore) sont préservés tels quels."""
     raw = [w for w in re.split(r'\W+', question.lower()) if len(w) >= 2 and w not in STOP_WORDS]
-    return _lemmatize(raw)
+    technical = [w for w in raw if '_' in w]
+    regular = [w for w in raw if '_' not in w]
+    return technical + _lemmatize(regular)
 
 
 def extract_features(

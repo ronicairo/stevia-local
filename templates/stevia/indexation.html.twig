@@ -77,7 +77,11 @@
                     </td>
                     <td class="text-center">
                         <div class="d-flex flex-column align-items-center gap-1">
-                        {% if book.is_indexed ?? book.indexed ?? false %}
+                        {% if book.indexing ?? false %}
+                            <span class="badge bg-info text-dark badge-indexing">
+                                <span class="spinner-border spinner-border-sm" style="width:.7rem;height:.7rem;"></span> En cours…
+                            </span>
+                        {% elseif book.is_indexed ?? book.indexed ?? false %}
                             <span class="badge bg-success">
                                 <i class="bi bi-check-circle me-1"></i>Indexé
                             </span>
@@ -95,7 +99,7 @@
                     </td>
                     <td class="small text-muted">
                         {% if book.indexed_at is defined and book.indexed_at %}
-                            {{ book.indexed_at|date('d/m/Y H:i', 'Europe/Paris') }}
+                            {{ book.indexed_at|date('d/m/Y H:i', false) }}
                         {% else %}
                             —
                         {% endif %}

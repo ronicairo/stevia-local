@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Query, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from datetime import datetime, timezone
@@ -12,8 +13,11 @@ import logging.handlers
 import os
 import json
 import re
+import threading
 import requests
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
 # ── Formatter style Monolog ───────────────────────────────────────────────────
 class MonologFormatter(logging.Formatter):
@@ -22,20 +26,21 @@ class MonologFormatter(logging.Formatter):
         return f"[{dt}] {record.name}.{record.levelname}: {record.getMessage()}"
 
 # ── Loggers Python (fichiers montés depuis var/log/) ──────────────────────────
-_LOG_DIR = os.getenv("STEVIA_LOG_DIR", "/app/var_log")
+_LOG_DIR = os.getenv("STEVIA_LOG_DIR", "/app/var/log")
 os.makedirs(_LOG_DIR, exist_ok=True)
 
 _log_date = datetime.now().strftime("%Y-%m-%d")
 
 stevia_logger = logging.getLogger("stevia")
 stevia_logger.setLevel(logging.INFO)
-_stevia_handler = logging.FileHandler(os.path.join(_LOG_DIR, f"stevia-{_log_date}.log"))
+_stevia_handler = logging.FileHandler(os.path.join(_LOG_DIR, f"stevia-{_log_date}.log"), delay=True)
 _stevia_handler.setFormatter(MonologFormatter())
 stevia_logger.addHandler(_stevia_handler)
 
 train_logger = logging.getLogger("stevia_training")
 train_logger.setLevel(logging.INFO)
-_train_handler = logging.FileHandler(os.path.join(_LOG_DIR, f"stevia_training-{_log_date}.log"))
+# Daté : fusionne avec le fichier daté de Monolog (canal stevia_training en rotating_file)
+_train_handler = logging.FileHandler(os.path.join(_LOG_DIR, f"stevia_training-{_log_date}.log"), delay=True)
 _train_handler.setFormatter(MonologFormatter())
 train_logger.addHandler(_train_handler)
 
@@ -163,6 +168,12 @@ def seed_intent_labels():
 def startup():
     init_feedback_table()
     seed_intent_labels()
+    # Cache sémantique des questions validées 👍
+    try:
+        from services import qa_cache
+        qa_cache.init_cache_table()
+    except Exception as e:
+        stevia_logger.error(f"[Init] QACache init error: {e}")
     # Initialise les tables PGVector (crée langchain_pg_embedding si absente)
     try:
         from services.rag_engine import get_vector_store
@@ -174,10 +185,14 @@ def startup():
 @app.post("/ask/stream")
 async def ask_stream(payload: QueryModel, request: Request):
     async def event_generator():
-        for chunk in rag_answer_streaming(payload.question, roles=payload.roles):
-            if await request.is_disconnected():
-                break
-            yield json.dumps({"content": chunk}) + "\n"
+        try:
+            for chunk in rag_answer_streaming(payload.question, roles=payload.roles):
+                if await request.is_disconnected():
+                    break
+                yield json.dumps({"content": chunk}) + "\n"
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            yield json.dumps({"content": f"Erreur : {e}"}) + "\n"
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
@@ -208,6 +223,13 @@ async def receive_feedback(payload: FeedbackModel):
         clean_answer = re.sub(r"⚠️[^\n]*\n\n", "", payload.answer).strip()
         answer_preview = (clean_answer[:300] + "…") if len(clean_answer) > 300 else clean_answer
         label_str = "positif" if label == 1 else "négatif"
+        # Marque « issue du cache » si la réponse provenait du cache Q/R (avant purge éventuelle).
+        try:
+            from services import qa_cache
+            if qa_cache.has_approved(payload.question):
+                label_str += " (issue du cache)"
+        except Exception:
+            pass
         stevia_logger.info(
             f"Feedback {label_str} "
             + json.dumps({
@@ -220,6 +242,16 @@ async def receive_feedback(payload: FeedbackModel):
     except Exception as e:
         stevia_logger.error(f"[Feedback] Erreur mise à jour label : {e}")
         return {"status": "error", "message": str(e)}
+
+    # Cache sémantique : 👍 met la réponse en cache (servable) ; 👎 la retire.
+    try:
+        from services import qa_cache
+        if label == 1:
+            qa_cache.validate(payload.question, payload.answer)
+        else:
+            qa_cache.purge(payload.question)
+    except Exception as e:
+        stevia_logger.error(f"[Feedback] Erreur cache Q/R : {e}")
 
     # 👍 → label=1 dans stevia_intent_labels pour enrichir le classifieur d'intention
     if label == 1:
@@ -249,8 +281,49 @@ async def receive_feedback(payload: FeedbackModel):
     return {"status": "ok", "retrained": False}
 
 
+# ─────────────────────────── CACHE Q/R (modération admin) ───────────────────────────
+
+@app.get("/cache/list")
+def cache_list():
+    """Liste les réponses en cache (page de gestion)."""
+    from services import qa_cache
+    return qa_cache.list_entries()
+
+
+@app.delete("/cache/{entry_id}")
+def cache_delete(entry_id: int):
+    """Retire une réponse du cache (devenue fausse)."""
+    from services import qa_cache
+    ok = qa_cache.delete_entry(entry_id)
+    return {"status": "ok" if ok else "notfound", "id": entry_id}
+
+
+# Livres en cours d'indexation — clé en str (comme book_id dans /bookstack/books)
+_INDEXING_LOCK = threading.Lock()
+_INDEXING_IN_PROGRESS: set[str] = set()
+
+
 @app.post("/index/bookstack/book/{book_id}")
-async def index_book(book_id: int, force: bool = Query(False)):
+def index_book(book_id: int, force: bool = Query(False)):
+    # def (pas async) → FastAPI l'exécute dans un threadpool : l'indexation (embeddings
+    # CPU + appels BookStack synchrones) ne bloque PLUS la boucle → l'API reste dispo (chat)
+    with _INDEXING_LOCK:
+        _INDEXING_IN_PROGRESS.add(str(book_id))
+    try:
+        return _do_index_book(book_id, force)
+    finally:
+        with _INDEXING_LOCK:
+            _INDEXING_IN_PROGRESS.discard(str(book_id))
+
+
+@app.get("/index/status")
+def index_status():
+    # Léger : liste des book_id en cours d'indexation (pour le polling front)
+    with _INDEXING_LOCK:
+        return {"indexing": sorted(_INDEXING_IN_PROGRESS)}
+
+
+def _do_index_book(book_id: int, force: bool = False):
     if not BOOKSTACK_URL:
         return {"status": "error", "message": "BOOKSTACK_URL non configuré"}
 
@@ -300,6 +373,7 @@ async def index_book(book_id: int, force: bool = Query(False)):
         if not pages_data:
             return {"status": "error", "message": "Aucune page trouvée dans ce livre"}
 
+        # Invalidation ciblée du cache Q/R (par PAGE modifiée) gérée dans index_bookstack_book.
         result = index_bookstack_book(book_id, pages_data, book_name=book_name, book_slug=book_slug, book_tags=book_tags)
 
         return {
@@ -330,6 +404,11 @@ async def delete_book_index(book_id: int):
         )
         book_name = resp.json().get("name", f"Livre {book_id}") if resp.ok else f"Livre {book_id}"
         delete_vectors_by_book_id(book_id)
+        try:
+            from services import qa_cache
+            qa_cache.invalidate_book(book_id)
+        except Exception as e:
+            stevia_logger.error(f"[Delete] QACache invalidate error: {e}")
         return {"status": "deleted", "book_id": book_id, "book_name": book_name}
 
     except Exception as e:
@@ -419,6 +498,9 @@ async def list_bookstack_books():
                 book["indexed_chunks"] = 0
                 book["needs_update"] = False
 
+            # Livre actuellement en cours d'indexation (webhook ou manuel)
+            book["indexing"] = book_id in _INDEXING_IN_PROGRESS
+
             books_with_pages.append(book)
 
         return {"status": "ok", "data": books_with_pages}
@@ -470,7 +552,7 @@ async def bookstack_webhook(
             new_ids = shelf_book_ids - indexed_ids
             results = []
             for bid in new_ids:
-                r = await index_book(bid, force=True)
+                r = await run_in_threadpool(index_book, bid, force=True)
                 results.append(r)
             return {"status": "success", "indexed": results}
         except Exception as e:
@@ -493,7 +575,7 @@ async def bookstack_webhook(
         stevia_logger.error(f"Erreur vérification étagère : {e}")
 
     try:
-        result = await index_book(book_id, force=True)
+        result = await run_in_threadpool(index_book, book_id, force=True)
         return {"status": "success", "result": result}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -525,7 +607,7 @@ async def index_all_books():
         for book in books:
             book_id = book.get("id")
             book_name = book.get("name", "")
-            result = await index_book(book_id, force=True)
+            result = await run_in_threadpool(index_book, book_id, force=True)
             pages = result.get("pages", 0)
             chunks = result.get("chunks", 0)
             total_pages += pages
@@ -624,6 +706,24 @@ def ml_status():
         row2 = db_exec("SELECT COUNT(*) as labeled FROM stevia_ml_feedback WHERE label IS NOT NULL").fetchone()
         status["feedback_labeled"] = row2.labeled if row2 else 0
         status["feedback_pending"] = status["feedback_total"] - status["feedback_labeled"]
+
+        # Feedbacks étiquetés non encore intégrés au modèle (depuis le dernier retrain)
+        try:
+            from pathlib import Path as _Path
+            import joblib as _joblib
+            _meta_path = _Path(__file__).parent / "ml" / "dataset" / "model_meta.pkl"
+            _meta = _joblib.load(_meta_path) if _meta_path.exists() else {}
+            _last_retrain = _meta.get("last_retrain_at")
+            if _last_retrain:
+                _r = db_exec(
+                    "SELECT COUNT(*) as c FROM stevia_ml_feedback WHERE label IS NOT NULL AND labeled_at > :ts",
+                    {"ts": _last_retrain}
+                ).fetchone()
+            else:
+                _r = db_exec("SELECT COUNT(*) as c FROM stevia_ml_feedback WHERE label IS NOT NULL").fetchone()
+            status["feedback_not_trained"] = _r.c if _r else 0
+        except Exception:
+            status["feedback_not_trained"] = 0
     except Exception:
         pass
 
@@ -703,7 +803,7 @@ async def ask_debug(payload: QueryModel):
 @app.post("/debug/pipeline")
 async def debug_pipeline(payload: QueryModel):
     """Retourne le résultat complet des deux classifieurs pour une question donnée."""
-    from services.rag_engine import get_vector_store, expand_question, rerank_documents, build_context, extract_search_keywords
+    from services.rag_engine import get_vector_store, expand_question, rerank_documents, build_context, extract_search_keywords, search_by_keywords, merge_keyword_docs, dedupe_by_content
     from services.mistral_utils import refine_answer_streaming
     from services.intent_classifier import _load_trained_model, _load_prototypes
     from ml.extract_features import extract_features, FEATURE_NAMES
@@ -722,7 +822,7 @@ async def debug_pipeline(payload: QueryModel):
         if trained_intent is not None:
             proba = trained_intent.predict_proba(q_vec.reshape(1, -1))[0]
             intent_result = {
-                "valid": bool(trained_intent.predict(q_vec.reshape(1, -1))[0]),
+                "valid": bool(proba[1] >= 0.25),
                 "proba_valid": round(float(proba[1]), 4),
                 "proba_invalid": round(float(proba[0]), 4),
                 "model": "LogisticRegression (intent_model.pkl)",
@@ -751,11 +851,14 @@ async def debug_pipeline(payload: QueryModel):
             "llm_response": None,
         }
 
-    # --- 2. Recherche vectorielle ---
+    # --- 2. Recherche vectorielle + mots-clés ---
     expanded = expand_question(question)
     store = get_vector_store()
     raw_docs = store.similarity_search_with_score(expanded, k=12)
     search_keywords = extract_search_keywords(expanded)
+    keyword_docs = search_by_keywords(search_keywords, raw_docs)
+    raw_docs = merge_keyword_docs(raw_docs, keyword_docs)
+    raw_docs = dedupe_by_content(raw_docs)
     docs_with_scores = rerank_documents(raw_docs, question, roles)
 
     # --- 3. Classifieur de pertinence sur chaque chunk ---
@@ -779,6 +882,7 @@ async def debug_pipeline(payload: QueryModel):
             "rank": rank,
             "title": doc.metadata.get("title", "?"),
             "book": doc.metadata.get("book_name", "?"),
+            "content": doc.page_content,
             "features": {k: features[k] for k in FEATURE_NAMES},
             "proba_pertinent": round(proba_rel, 4),
             "prediction": prediction,
@@ -787,13 +891,39 @@ async def debug_pipeline(payload: QueryModel):
         if prediction == 1:
             retained_docs.append((doc, score, doc_roles))
 
-    # --- 4. Contexte + réponse LLM ---
+    # --- 4. Contexte + réponse — MÊME chemin que la prod (RAW + paragraphes bornés) ---
+    # La page debug n'est PAS en prod : on affiche donc le contexte RÉELLEMENT utilisé
+    # (mode RAW, paragraphes ciblés bornés) et la réponse produite par le vrai pipeline,
+    # au lieu de l'ancien couple 1-chunk + reformulation (qui divergeait de la prod).
+    from services.rag_engine import build_debug_answer
+    import os as _os
+
+    # Pages pré-rerank capturées comme en prod (pour build_para_context / reload)
+    try:
+        _rag_para_budget = int(_os.getenv("RAG_PARA_BUDGET", "0"))
+    except ValueError:
+        _rag_para_budget = 0
+    try:
+        _rag_pages_n = max(1, int(_os.getenv("RAG_PAGES", "1")))
+    except ValueError:
+        _rag_pages_n = 1
+    _pages_capture = max(_rag_pages_n, 3) if _rag_para_budget > 0 else _rag_pages_n
+    preranked_pages = []
+    if _pages_capture > 1:
+        for _d, _s, _ in docs_with_scores:
+            _pid = _d.metadata.get("page_id")
+            if _pid and _pid not in preranked_pages:
+                preranked_pages.append(_pid)
+            if len(preranked_pages) >= _pages_capture:
+                break
+
     context_sent = None
     llm_response = None
-    if retained_docs:
-        best_page_id = retained_docs[0][0].metadata.get("page_id")
-        context_sent, _, _ = build_context(docs_with_scores, best_page_id, search_keywords)
-        llm_response = "".join(refine_answer_streaming(context_sent, expanded))
+    answer_mode = None
+    if docs_with_scores:
+        context_sent, llm_response, answer_mode = build_debug_answer(
+            docs_with_scores, expanded, question, roles, preranked_pages
+        )
 
     return {
         "question": question,
@@ -803,6 +933,7 @@ async def debug_pipeline(payload: QueryModel):
         "seuil_pertinence": RELEVANCE_THRESHOLD,
         "context_sent": context_sent,
         "llm_response": llm_response,
+        "answer_mode": answer_mode,
     }
 
 

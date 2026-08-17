@@ -20,3 +20,4 @@ spacy
 scikit-learn
 pandas
 joblib
+pillow

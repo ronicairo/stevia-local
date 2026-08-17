@@ -24,23 +24,31 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!text) return "";
         let formatted = text;
 
-        // Sauvegarde les liens source AVANT l'échappement
-        const sourceLinks = [];
-        formatted = formatted.replace(
-            /<a href="([^"]+)" target="_blank" class="source-link">([^<]+)<\/a>/g,
-            (match) => {
-                sourceLinks.push(match);
-                return `__SOURCE_LINK_${sourceLinks.length - 1}__`;
-            }
-        );
+        // Sauvegarde les blocs HTML à préserver AVANT l'échappement
+        const preserved = [];
+        const protect = (re) => {
+            formatted = formatted.replace(re, (match) => {
+                preserved.push(match);
+                return `__HTML_BLOCK_${preserved.length - 1}__`;
+            });
+        };
+        // Bloc "Source" (carte stylée)
+        protect(/<div class="stevia-source"[^>]*>[\s\S]*?<\/div>/g);
+        // Bloc "Réponses connexes" (carte stylée)
+        protect(/<div class="stevia-related"[^>]*>[\s\S]*?<\/div>/g);
+        // Liens source (ancien format simple, compat)
+        protect(/<a href="[^"]+" target="_blank" class="source-link">[^<]+<\/a>/g);
 
         // Échappe le HTML
         formatted = formatted.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-        // Restore les liens source
-        sourceLinks.forEach((link, i) => {
-            formatted = formatted.replace(`__SOURCE_LINK_${i}__`, link);
+        // Restore les blocs préservés
+        preserved.forEach((block, i) => {
+            formatted = formatted.replace(`__HTML_BLOCK_${i}__`, block);
         });
+
+        // Titres markdown (##, ###, ####) → gras avec saut de ligne
+        formatted = formatted.replace(/^#{1,4}\s+(.+)$/gm, '<strong>$1</strong>\n');
 
         // Markdown bold
         formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -49,10 +57,20 @@ document.addEventListener('DOMContentLoaded', () => {
         formatted = formatted.replace(/^\s*[-*]\s+(.*)$/gm, '<li>$1</li>');
         formatted = formatted.replace(/((<li\b[^>]*>.*?<\/li>\s*)+)/g, '<ul>$1</ul>');
 
-        // Images markdown
-        formatted = formatted.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,
-            '<img src="$2" alt="$1" class="stevia-image" style="max-width:100%;margin:10px 0;border-radius:8px;cursor:pointer;" onclick="window.open(\'$2\',\'_blank\')">'
-        );
+        // Images markdown — reproduit la taille d'affichage de BookStack (#sz=WxH)
+        formatted = formatted.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, url) => {
+            let w = 0, h = 0, clean = url;
+            const sz = url.match(/#sz=(\d+)x(\d+)$/);
+            if (sz) { w = +sz[1]; h = +sz[2]; clean = url.replace(/#sz=\d+x\d+$/, ''); }
+            const safeAlt = (alt || 'image').replace(/"/g, '');
+            const dim = (w && h) ? `width="${w}" height="${h}"` : '';
+            if (w && w <= 40) {
+                // Petite icône → inline, alignée au texte
+                return `<img src="${clean}" alt="${safeAlt}" ${dim} class="stevia-icon" style="vertical-align:text-bottom;margin:0 2px;cursor:pointer;" onclick="window.open('${clean}','_blank')">`;
+            }
+            // Capture d'écran → bloc, taille du doc plafonnée à la largeur de la bulle
+            return `<img src="${clean}" alt="${safeAlt}" ${dim} class="stevia-image" style="max-width:100%;height:auto;margin:10px 0;border-radius:8px;cursor:pointer;" onclick="window.open('${clean}','_blank')">`;
+        });
 
         formatted = formatted.replace(/\n(?!(<ul|<li|<\/ul|<\/li|<img))/g, '<br>');
 
@@ -154,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Message de bienvenue
     if (messages && messages.children.length === 0) {
         addMessage(
-            "Bonjour ! Je suis **Stevia**, votre assistante documentaire.\n\nComment puis-je vous aider aujourd'hui ?",
+            "Bonjour ! Je suis **Stevia**, votre assistant documentaire 🍃 \n\nComment puis-je vous aider aujourd'hui ?",
             "bot"
         );
     }
@@ -425,13 +443,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const btn = this;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Indexation en cours…';
 
-        const reloadTimer = setTimeout(() => window.location.reload(), 180000);
+        // Indexation livre par livre (requêtes courtes) → évite le gateway timeout
+        // du proxy sur une seule requête géante /index/all.
+        const ids = [...new Set(
+            [...document.querySelectorAll('.btn-index-book[data-book-id]')]
+                .map(b => b.getAttribute('data-book-id'))
+                .filter(Boolean)
+        )];
 
-        fetch('/stevia/index/all', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-            .then(() => { clearTimeout(reloadTimer); window.location.reload(); })
-            .catch(() => { clearTimeout(reloadTimer); window.location.reload(); });
+        let ok = 0, errors = 0;
+        for (let i = 0; i < ids.length; i++) {
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Indexation ${i + 1}/${ids.length}…`;
+            try {
+                const r = await fetch(`/stevia/index/book/${ids[i]}?silent=1`, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                r.ok ? ok++ : errors++;
+            } catch (_) {
+                errors++;
+            }
+        }
+        // Un seul message global (au lieu d'un flash par livre)
+        await fetch(`/stevia/index/all/done?ok=${ok}&errors=${errors}`, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        }).catch(() => {});
+        window.location.reload();
     });
 
     document.getElementById('btn-delete-all')?.addEventListener('click', async function (e) {
@@ -456,4 +495,19 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.innerHTML = originalHTML;
         }
     });
+
+    // Page indexation : si un livre est "en cours", on POLL discrètement l'état
+    // et on recharge UNE SEULE FOIS quand tout est terminé (pas de reload en boucle).
+    if (document.querySelector('.badge-indexing')) {
+        const poll = setInterval(async () => {
+            try {
+                const r = await fetch('/stevia/index/status', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                const data = await r.json();
+                if (!data.indexing || data.indexing.length === 0) {
+                    clearInterval(poll);
+                    window.location.reload();
+                }
+            } catch (_) { /* on réessaie au prochain tick */ }
+        }, 5000);
+    }
 });

@@ -20,7 +20,7 @@ class HomeController extends AbstractController
     #[Route('/switch-role/{role}', name: 'switch_role', methods: ['POST'])]
     public function switchRole(string $role, Request $request): Response
     {
-        if (array_key_exists($role, self::ROLES)) {
+        if (array_key_exists($role, self::ROLES)) { 
             $request->getSession()->set('stevia_role', $role);
         }
         return $this->redirect($request->headers->get('referer', '/'));

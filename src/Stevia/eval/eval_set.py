@@ -1,0 +1,23 @@
+# (question, marqueur de réponse présent SEULEMENT dans la page qui répond)
+EVAL = [
+ ("Quels sont les objectifs de Sucre ?", "a pour objectif de garantir la fiabilité"),
+ ("A quoi servent les échéances de suivi ?", "échéances de suivi sont générées dans tous les cas"),
+ ("Quelles sont les en-têtes obligatoire du CSV dans les notifications en masse ?", "obligatoirement contenir les en-têtes suivantes"),
+ ("Quels sont les conditions à respecter dans les notif en masse ?", "les créances du CSV doivent"),
+ ("A quoi correspondent les créances < = 0.68% PSS sans mouvement ?", "revision_dossier_sans_mvt"),
+ ("A quelle h a lieu l'intégration de la journée comptable ?", "intègre la journée comptable DETTE le soir"),
+ ("A quoi sert le champ date manifestation débiteur ?", "manifestation débiteur sans réponse"),
+ ("Quelles sont les etapes minimum que doit avoir un workflow ?", "à minima deux étapes"),
+ ("Lors de la création ou modification d'une adresse débiteur, combien de caractères maximum doit faire le champ civilité ?", "La civilité doit faire au maximum"),
+ ("A quoi servent les libellés générique ?", "libellés génériques renseignent les listes déroulantes"),
+ ("A quoi sert l'onglet aide mémoire ?", "Aide-mémoire permet à l"),
+ ("A quoi sert l'épuration des données de la base ?", "traitement automatique mensuel supprime"),
+ ("Comment notifier une créance ?", "logo avec un"),
+ ("A quoi correspond la date_der_ope ?", "date de dernière opération comptable"),
+ ("comment reconnaitre les echéances qui sont supprimés et recalculer tout les jours ?", "supprimées et recalculées tous les jours"),
+ ("comment fonctionne la balise AR ?", "balise_ar"),
+ ("Comment créer un workflow ?", "créer un nouveau workflow"),
+ ("A quoi sert le champ date envoi transmission pôle ?", "delai_suivi_envoi_pole"),
+ ("C'est quoi les libellés notifications ?", "libellés de notification sont utilisés pour faciliter"),
+ ("C'est quoi les créances à monter en charge ?", "monter en charge"),
+]
