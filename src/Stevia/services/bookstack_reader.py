@@ -7,34 +7,83 @@ BOOKSTACK_URL = os.getenv("BOOKSTACK_URL")
 if not BOOKSTACK_URL:
     raise ValueError("BOOKSTACK_URL non défini dans le .env")
 
+# Marques d'une cellule de tableau croisé (X, croix, coche…)
+_TABLE_MARK_RE = re.compile(r'^(x|×|✕|✓|✔|✗|oui)$', re.IGNORECASE)
+
+
+def _cell_to_text(c: str) -> str:
+    # Préserve les sauts de paragraphe/br avec un placeholder (⏎) avant de retirer les tags
+    c = re.sub(r'</p>\s*<p[^>]*>', '⏎', c, flags=re.IGNORECASE)
+    c = re.sub(r'<br\s*/?>', '⏎', c, flags=re.IGNORECASE)
+    c = re.sub(r'<li[^>]*>', '⏎- ', c, flags=re.IGNORECASE)
+    c = re.sub(r'<[^>]+>', '', c)
+    c = re.sub(r'[ \t]+', ' ', c).strip()
+    return c
+
+
 def _table_to_markdown(table_html: str) -> str:
-    """Convertit une table HTML en tableau markdown avec headers explicites."""
+    """Convertit une table HTML en texte.
+    - Tableau 'matrice' (lignes de X croisant des colonnes) → remplace chaque X par le NOM
+      de sa colonne + une vue par colonne. Sinon un petit modèle ne peut pas lire
+      l'alignement des X (ex. « à quoi sert le profil sucre_consult »).
+    - Sinon → tableau markdown classique avec headers (comportement d'origine)."""
     rows = re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, re.DOTALL | re.IGNORECASE)
     if not rows:
         return ''
 
+    # --- Détection MATRICE : une ligne d'en-tête (noms de colonnes) + ≥2 lignes de marques ---
+    parsed = []
+    for row_html in rows:
+        cells = re.findall(r'<t[hd][^>]*>(.*?)</t[hd]>', row_html, re.DOTALL | re.IGNORECASE)
+        cells = [_cell_to_text(c) for c in cells]
+        if any(cells):
+            parsed.append(cells)
+    if parsed:
+        ncol = max(len(r) for r in parsed)
+
+        def _is_mark(v: str) -> bool:
+            return _TABLE_MARK_RE.match(v.strip()) is not None
+
+        def _is_mark_row(r: list) -> bool:
+            body = r[1:]  # hors 1re colonne (le label de ligne)
+            return (len(body) >= 2
+                    and all(_is_mark(v) or not v.strip() for v in body)
+                    and any(_is_mark(v) for v in body))
+
+        header_row, data_rows = None, []
+        for r in parsed:
+            if len(r) != ncol:            # ligne colspan (en-tête fusionné) → ignorée
+                continue
+            if _is_mark_row(r):
+                data_rows.append(r)
+            elif header_row is None:
+                header_row = r            # 1re ligne pleine non-marquée = noms de colonnes
+
+        if header_row and len(data_rows) >= 2:
+            cols = header_row[1:]
+            axis = header_row[0] or "Élément"
+            out = []
+            for r in data_rows:           # vue par LIGNE : « Consultation : accessible par … »
+                acc = [cols[i] for i, v in enumerate(r[1:]) if i < len(cols) and _is_mark(v)]
+                if acc:
+                    out.append(f"{axis} « {r[0]} » : accessible par les profils {', '.join(acc)}.")
+            for j, col in enumerate(cols):  # vue par COLONNE : « sucre_consult a accès à … »
+                feats = [r[0] for r in data_rows if j + 1 < len(r) and _is_mark(r[j + 1])]
+                if feats:
+                    out.append(f"Le profil {col} a accès à : {', '.join(feats)}.")
+            return '\n' + '\n'.join(out) + '\n\n'
+
+    # --- Table normale → markdown classique (comportement d'origine) ---
     result = []
     header_done = False
-
     for row_html in rows:
         cells_th = re.findall(r'<th[^>]*>(.*?)</th>', row_html, re.DOTALL | re.IGNORECASE)
         cells_td = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL | re.IGNORECASE)
-
         is_header = bool(cells_th)
         cells = cells_th if cells_th else cells_td
-
-        def _cell_to_text(c: str) -> str:
-            # Préserve les sauts de paragraphe/br avec un placeholder (⏎) avant de retirer les tags
-            c = re.sub(r'</p>\s*<p[^>]*>', '⏎', c, flags=re.IGNORECASE)
-            c = re.sub(r'<br\s*/?>', '⏎', c, flags=re.IGNORECASE)
-            c = re.sub(r'<li[^>]*>', '⏎- ', c, flags=re.IGNORECASE)
-            c = re.sub(r'<[^>]+>', '', c)
-            c = re.sub(r'[ \t]+', ' ', c).strip()
-            return c
         cleaned = [_cell_to_text(c) for c in cells]
         if not any(cleaned):
             continue
-
         result.append('| ' + ' | '.join(cleaned) + ' |')
         if is_header and not header_done:
             result.append('| ' + ' | '.join(['---'] * len(cleaned)) + ' |')

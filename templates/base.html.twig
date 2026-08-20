@@ -34,6 +34,20 @@
         </div>
     </div>
     <div class="topnav-right">
+        {# Bascule GLOBALE du mode de réponse Stevia (chatbot + page debug), hors widget #}
+        <style>
+            .stevia-mode-seg{display:inline-flex;align-items:center;background:#eef1f5;border-radius:999px;padding:3px;margin-right:16px;gap:2px;}
+            .stevia-mode-seg .smode-lbl{font-size:11px;font-weight:600;color:#8a93a0;text-transform:uppercase;letter-spacing:.04em;padding:0 8px 0 6px;}
+            .smode-btn{border:0;background:transparent;color:#5a6472;font-size:12px;font-weight:600;padding:5px 14px;border-radius:999px;cursor:pointer;transition:all .15s ease;line-height:1;}
+            .smode-btn:hover{color:#206ea7;}
+            .smode-btn.is-active{background:#fff;color:#206ea7;box-shadow:0 1px 3px rgba(32,110,167,.18);}
+        </style>
+        <div class="stevia-mode-seg" role="group" aria-label="Mode de réponse Stevia" title="Mode de réponse de Stevia (chatbot + debug)">
+            <span class="smode-lbl">Stevia</span>
+            <input type="hidden" id="stevia-mode" value="reformulation">
+            <button type="button" class="smode-btn is-active" data-m="reformulation">Reformulation</button>
+            <button type="button" class="smode-btn" data-m="raw">Verbatim</button>
+        </div>
         <i class="bi bi-bell topnav-icon" title="Notifications"></i>
         <div class="topnav-user-info">
             <i class="bi bi-person-circle topnav-icon"></i>
@@ -233,6 +247,29 @@
 
 {# Bootstrap JS #}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+{# Bascule + persistance du mode Stevia (segmented control, partagé chatbot + debug) #}
+<script>
+(function () {
+    var input = document.getElementById('stevia-mode');
+    if (!input) return;
+    var seg = input.closest('.stevia-mode-seg');
+    function apply(m) {
+        input.value = m;
+        window.STEVIA_MODE = m;
+        seg.querySelectorAll('.smode-btn').forEach(function (b) {
+            b.classList.toggle('is-active', b.dataset.m === m);
+        });
+    }
+    apply(localStorage.getItem('steviaMode') || 'reformulation');
+    seg.querySelectorAll('.smode-btn').forEach(function (b) {
+        b.addEventListener('click', function () {
+            localStorage.setItem('steviaMode', b.dataset.m);
+            apply(b.dataset.m);
+        });
+    });
+})();
+</script>
 
 {# Sidebar toggle #}
 <script>

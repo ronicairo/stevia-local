@@ -30,6 +30,17 @@ SUCRE (Symfony)
 
 ---
 
+## Modes de réponse
+
+Stevia a **deux modes**, bascule via le bouton **« Stevia »** dans la barre du haut (partagé chatbot + page debug ; variable `RAW_MODE`) :
+
+- **RAW / surligneur** (`RAW_MODE=true`, `qwen2.5:3b`) : le LLM ne fait que **choisir les numéros des lignes** pertinentes ; Python ressort le texte **verbatim** de la doc → zéro invention. Contexte = paragraphes ciblés bornés (`build_para_context`, budget `RAG_PARA_BUDGET`). C'est le mode **prod** (rapide sur CPU, fidèle).
+- **Reformulation** (`RAW_MODE=false`, `qwen2.5:7b`) : le LLM **synthétise** la réponse. Contexte = **section h2/h3** de la page (sinon page entière) + paragraphes pertinents (`build_section_context`). Plus fluide, mais peut paraphraser → réservé au local/GPU.
+
+Embeddings communs : `qwen3-embedding:0.6b` (recherche vectorielle + classifieurs intention/pertinence).
+
+---
+
 ## Structure
 
 ```
@@ -118,7 +129,10 @@ curl http://127.0.0.1:8001/health
 | `BOOKSTACK_TOKEN_ID` | Token API BookStack |
 | `BOOKSTACK_TOKEN_SECRET` | Secret du token API |
 | `OLLAMA_HOST` | `host.containers.internal` (Ollama natif macOS) |
-| `OLLAMA_MODEL` | Modèle LLM (ex: `gemma3:4b`) |
+| `OLLAMA_MODEL` | Modèle de **reformulation** (ex: `qwen2.5:7b`) |
+| `RAW_OLLAMA_MODEL` | Modèle du mode **RAW/surligneur** (ex: `qwen2.5:3b`) |
+| `RAW_MODE` | `true` = RAW (verbatim) · `false` = reformulation |
+| `RAG_PARA_BUDGET` | Budget contexte RAW en caractères (paragraphes ciblés) |
 | `POSTGRES_USER` | Utilisateur PostgreSQL |
 | `POSTGRES_PASSWORD` | Mot de passe PostgreSQL |
 | `POSTGRES_DB` | Nom de la base |

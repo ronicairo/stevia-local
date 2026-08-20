@@ -796,7 +796,12 @@ def _extract_relevant_lines(text: str, question: str) -> str:
 
     def _is_header(line: str) -> bool:
         s = line.strip()
-        return s.startswith('#') or s.startswith('**')
+        if s.startswith('#'):
+            return True
+        # Un vrai titre en gras est COURT et sans « : ». Une ligne « **NOM** : valeur »
+        # (issue de la conversion de tableau, ex. « **SUCRE_CONSULT** : Profil… ») est une
+        # DONNÉE, pas un titre : la garder ferait ressortir TOUTES les lignes de la liste.
+        return s.startswith('**') and ':' not in s and len(s) < 80
 
     scored = [_score(l) for l in lines]
     max_score = max(scored) if scored else 0
@@ -922,9 +927,16 @@ def _build_raw_answer(raw_text: str, question: str) -> str:
             # Pas de tag INTRO mais LIGNES présent → prend la dernière ligne avant LIGNES:
             before = response[:m_lignes.start()].strip().split('\n')
             intro = before[-1].strip() if before and before[-1].strip() else ""
-        # Fallback : aucun tag → numéros isolés
+        # Fallback : aucun tag → numéros isolés. MAIS uniquement si la réponse est
+        # VRAIMENT une liste de numéros (« 4 », « ligne 4, 5 »). Si le modèle a cassé
+        # le format et répondu en PROSE (reformulation « 1. Il permet… 2. Les
+        # utilisateurs… »), ses puces « 1. 2. 3. » NE sont PAS des n° de lignes :
+        # les extraire ressortirait des lignes du contexte au hasard. Dans ce cas on
+        # laisse selected_nums vide → l'extraction par mots-clés (verbatim, sûre) prend le relais.
         if not selected_nums:
-            selected_nums = _parse_nums(response)
+            _residue = re.sub(r'lignes?|:', '', response, flags=re.IGNORECASE)
+            if sum(c.isalpha() for c in _residue) <= 3:
+                selected_nums = _parse_nums(response)
 
     # Nettoie l'intro : retire toute référence à la numérotation interne (ex: "dans les lignes 4 à 12")
     if intro:
@@ -951,7 +963,13 @@ def _build_raw_answer(raw_text: str, question: str) -> str:
     # « À quoi servent les échéances » → le RAW prenait « induites » mais pas « manuelles ».
     # En RAW c'est SÛR (verbatim, aucune invention) — au pire un peu plus de contexte.
     def _is_bullet_line(s: str) -> bool:
-        return s.strip().startswith(('•', '-', '*'))
+        t = s.strip()
+        # ⚠️ Une ligne en GRAS « **NOM** : … » (conversion de tableau) commence par « * »
+        # mais N'EST PAS une puce : la traiter comme telle englobait tout le bloc de
+        # lignes « **…** » contiguës (toute la table des profils) à partir d'une seule.
+        if t.startswith('**'):
+            return False
+        return t.startswith(('•', '-', '*'))
 
     if selected_nums:
         expanded = set(selected_nums)
@@ -1026,18 +1044,22 @@ def _build_raw_answer(raw_text: str, question: str) -> str:
         except Exception as _e:
             print(f"[RAW deduce fallback erreur] {_e}", flush=True)
 
-    # Garde-fou anti-répétition : si l'intro recoupe trop la 1ère ligne du corps
-    # (l'intro paraphrase déjà la réponse), on la supprime.
+    # Garde-fou anti-répétition : si l'intro (paraphrase du LLM) recoupe trop une ligne
+    # du corps (verbatim), on la supprime — le corps dit déjà la même chose, souvent en
+    # plus complet (ex. intro « …générées pour créances non soldées » vs corps « …générées
+    # DANS TOUS LES CAS pour créances non soldées »). On scanne TOUTES les lignes du corps,
+    # pas seulement la première (le doublon peut être plus bas dans la réponse).
     if intro and body:
         def _sig_words(s: str) -> set:
             s = _norm_accent(re.sub(r'[^\w\s]', ' ', s.lower()))
             return {w for w in s.split() if len(w) > 3 and w not in STOP_WORDS}
         intro_words = _sig_words(intro)
-        first_body_words = _sig_words(body.split('\n')[0])
-        if intro_words and first_body_words:
-            overlap = len(intro_words & first_body_words) / len(intro_words)
-            if overlap >= 0.6:
-                intro = ""
+        if intro_words:
+            for _bl in body.split('\n'):
+                bw = _sig_words(_bl)
+                if bw and len(intro_words & bw) / len(intro_words) >= 0.6:
+                    intro = ""
+                    break
 
     if intro:
         return intro + "\n\n" + body
@@ -1363,6 +1385,228 @@ def build_para_context(docs_with_scores: list, target_pages: list, question: str
     return context, chunk_images, metas
 
 
+_DEF_RE = re.compile(r"\b(c'?est\s+quoi|qu'?est[- ]ce\s+qu|que\s+signifie|d[ée]finition|c\s*koi)\b", re.IGNORECASE)
+
+
+def build_full_context(docs_with_scores: list, budget: int, question: str = ""):
+    """Contexte LARGE pour la REFORMULATION (modèle capable).
+    Colle les meilleurs chunks dans l'ordre du rerank jusqu'au budget, SANS le filtrage
+    paragraphe serré de build_para_context. Mesuré : sur un modèle capable (qwen2.5:7b),
+    ce contexte complet répond MIEUX (réponse juste ~45%) que le contexte filtré (~35%) —
+    le filtrage serré affame le modèle (il jette du contenu utile). Le filtrage reste
+    réservé au mode RAW (petit modèle, qui se noie dans un contexte large).
+    Retourne (context, chunk_images, page_metas) comme build_para_context."""
+    ordered = list(docs_with_scores)
+    # DÉFINITIONNEL (« c'est quoi X ») : la déf est presque toujours au DÉBUT de la page
+    # mais a un cosinus faible → non récupérée → placée en score 0.0 en fin de liste →
+    # évincée par le budget. On remonte les 3 premiers chunks de la MEILLEURE page en tête
+    # pour garantir l'intro/définition (sinon le modèle invente). Ciblé : seulement sur les
+    # questions définitionnelles (ne gâche pas le budget des questions factuelles).
+    if question and _DEF_RE.search(question) and ordered:
+        best_pid = ordered[0][0].metadata.get("page_id")
+
+        def _cidx(t) -> int:
+            try:
+                return int(t[0].metadata.get("chunk_index", 999))
+            except (TypeError, ValueError):
+                return 999
+        intro = sorted((t for t in ordered if t[0].metadata.get("page_id") == best_pid and _cidx(t) <= 2),
+                       key=_cidx)
+        if intro:
+            intro_ids = {id(t) for t in intro}
+            ordered = intro + [t for t in ordered if id(t) not in intro_ids]
+
+    # CONTINUITÉ DE CHUNK : une intro de liste finit par « : » mais sa suite (la liste) est
+    # dans le chunk SUIVANT, souvent non récupéré (cosinus faible) → le contexte affichait
+    # « Il existe deux types : » puis sautait au chunk suivant récupéré, enjambant la liste.
+    # Dès qu'un chunk retenu finit par « : », on insère juste après le chunk chunk_index+1
+    # de la même page (disponible via la complétion de contexte). Marche pour TOUTE
+    # formulation (pas seulement « c'est quoi »).
+    def _key(t):
+        try:
+            return (t[0].metadata.get("page_id"), int(t[0].metadata.get("chunk_index", -1)))
+        except (TypeError, ValueError):
+            return (t[0].metadata.get("page_id"), -1)
+    _by_key = {_key(t): t for t in docs_with_scores if _key(t)[1] >= 0}
+    _expanded: list = []
+    _seen: set = set()
+    for t in ordered:
+        if id(t) in _seen:
+            continue
+        _expanded.append(t); _seen.add(id(t))
+        _txt = _PARA_IMG_RE.sub('', t[0].page_content).rstrip()
+        if _txt.endswith(':'):
+            pid, ci = _key(t)
+            _nxt = _by_key.get((pid, ci + 1))
+            if _nxt is not None and id(_nxt) not in _seen:
+                _expanded.append(_nxt); _seen.add(id(_nxt))
+    ordered = _expanded
+
+    parts: list[str] = []
+    metas: list[dict] = []
+    chunk_images: list[tuple[str, str]] = []
+    seen_img: set = set()
+    seen_sig: set = set()
+    total = 0
+    for doc, score, *_ in ordered:
+        c = re.sub(r'^\[TITRE\][^\n]*\n?', '', doc.page_content).strip().replace('⏎', '\n')
+        sig = re.sub(r'\s+', ' ', _PARA_IMG_RE.sub('', c)).strip().lower()[:80]
+        if len(sig) < 15 or (sig in seen_sig):      # vide / titre-seul / doublon overlap
+            continue
+        if total + len(c) > budget:
+            break
+        parts.append(c)
+        total += len(c) + 2
+        seen_sig.add(sig)
+        metas.append(doc.metadata)
+        imgs = doc.metadata.get("images", "")
+        if imgs:
+            u = imgs.split(",")[0].strip()
+            if u and u not in seen_img:
+                seen_img.add(u)
+                chunk_images.append((doc.page_content, u))
+    if not parts:
+        return None
+    # metas dédupliqués par page (ordre gardé → source principale = 1re page)
+    seen_p: set = set()
+    uniq_metas: list[dict] = []
+    for m in metas:
+        p = m.get("page_id")
+        if p not in seen_p:
+            seen_p.add(p)
+            uniq_metas.append(m)
+    titles = list(dict.fromkeys(m.get("title", "?") for m in uniq_metas))
+    context = "[Source: " + " | ".join(titles) + "]\n\n" + "\n\n".join(parts)
+    print(f"[build_full_context] pages={[m.get('page_id') for m in uniq_metas]} "
+          f"{total} car. (budget {budget})", flush=True)
+    return context, chunk_images, uniq_metas
+
+
+_H2_RE = re.compile(r'(?m)^\s{0,3}#{2,}\s+')  # titre de section : ## (h2) OU ### (h3) OU +, pas le # (h1/titre page)
+
+
+def build_section_context(docs_with_scores: list, budget: int, question: str = "", page_fallback: bool = True):
+    """Contexte par SECTION (titre ## / ###) pour la REFORMULATION (modèle capable).
+    Principe : la bonne PAGE est trouvée (recall ~90-95%), on lui donne son contenu
+    COMPLET mais FOCALISÉ — la SECTION la plus fine (bloc délimité par un titre ##/###)
+    qui contient la réponse, en entier. Si la page n'a AUCUN titre → **page entière**.
+    Objectif : reproduire le « PDF/page entière » (qui répond bien) sans le bruit des
+    autres sections. Résout « c'est quoi X » et les listes coupées (tout est là).
+    Retourne (context, chunk_images, page_metas) comme build_para_context."""
+    if not docs_with_scores:
+        return None
+    dl = list(docs_with_scores)
+    best_pid = dl[0][0].metadata.get("page_id")
+
+    def _ci(t) -> int:
+        try:
+            return int(t[0].metadata.get("chunk_index", 999))
+        except (TypeError, ValueError):
+            return 999
+    page_chunks = sorted((t for t in dl if t[0].metadata.get("page_id") == best_pid), key=_ci)
+    if not page_chunks:
+        return None
+    title = page_chunks[0][0].metadata.get("title", "?")
+
+    # 1) Reconstruire le texte PLEIN de la page (dédup des lignes dupliquées par l'overlap)
+    seen: set = set()
+    lines: list[str] = []
+    for t in page_chunks:
+        txt = re.sub(r'^\[TITRE\][^\n]*\n?', '', t[0].page_content).replace('⏎', '\n')
+        for ln in txt.split('\n'):
+            k = ln.strip()
+            if k and k in seen:
+                continue
+            if k:
+                seen.add(k)
+            lines.append(ln)
+    full = '\n'.join(lines).strip()
+
+    # 2) Découper à la frontière de titre la PLUS FINE (h3 ## sinon h2, cf. _H2_RE = #{2,}).
+    # La partie AVANT le 1er titre = section 0 (souvent l'intro). Si la page n'a AUCUN
+    # titre ## / ### → page entière (beaucoup de pages BookStack sont plates).
+    idxs = [m.start() for m in _H2_RE.finditer(full)]
+    is_page = not idxs
+    if is_page:
+        section = full  # aucun titre de section → PAGE ENTIÈRE
+    else:
+        bounds = [0] + idxs + [len(full)]
+        sections = [full[bounds[i]:bounds[i + 1]].strip() for i in range(len(bounds) - 1)]
+        sections = [s for s in sections if len(s) > 15]
+        # 3) Section qui contient le MEILLEUR chunk récupéré (recouvrement de mots distinctifs)
+        anchor_words = {w for w in _para_words(dl[0][0].page_content) if len(w) >= 4}
+        section = max(sections, key=lambda s: len(anchor_words & set(_para_words(s)))) if sections else full
+        if len(section) < 40:      # section réduite à un titre → page entière (sécurité)
+            section, is_page = full, True
+
+    # RAW : si on retombe sur la PAGE ENTIÈRE (pas de section), on rend None → le RAW
+    # garde son filtrage serré (build_para_context) au lieu de noyer le petit modèle.
+    if is_page and not page_fallback:
+        return None
+
+    # 4) Garde-fou budget (une section énorme) : coupe à une frontière de phrase.
+    if budget > 0 and len(section) > budget:
+        cut = max(section.rfind('. ', 0, budget), section.rfind('\n', 0, budget))
+        section = section[:cut + 1].strip() if cut > 0 else section[:budget]
+
+    # 5) ROBUSTESSE (reformulation) : + les paragraphes des meilleurs chunks RÉCUPÉRÉS
+    # (toutes pages), non déjà dans la section. La réponse peut être dans une AUTRE section
+    # (ex. l'intro « à minima deux étapes ») que celle du meilleur chunk — comme la prod RAW
+    # (multi-paragraphes). La section reste EN TÊTE (focalisée) ; les paras complètent.
+    metas = [page_chunks[0][0].metadata]
+    body = section
+    if page_fallback:   # reformulation seulement (pas RAW, qui reste serré)
+        def _sig(s: str) -> str:
+            return re.sub(r'\s+', ' ', _PARA_IMG_RE.sub('', s)).strip().lower()[:70]
+        kept = {_sig(b) for b in re.split(r'\n\s*\n', section) if len(_sig(b)) > 12}
+        # Collecte des paragraphes candidats (chunks RÉCUPÉRÉS uniquement) avec leur POSITION
+        # dans le document (page, chunk_index, ordre) → tri en ORDRE DE LECTURE ensuite.
+        page_rank: dict = {}
+        pid_meta: dict = {}
+        cands: list = []   # (rang_page, chunk_index, seq, page_id, texte)
+        for doc, score, *_ in docs_with_scores:
+            if score == 0.0:        # uniquement les chunks RÉCUPÉRÉS (pas la complétion de page)
+                continue
+            pid = doc.metadata.get("page_id")
+            if pid not in page_rank:
+                page_rank[pid] = len(page_rank)   # ordre d'apparition = pertinence de la page
+                pid_meta[pid] = doc.metadata
+            try:
+                ci = int(doc.metadata.get("chunk_index", 999))
+            except (TypeError, ValueError):
+                ci = 999
+            raw = re.sub(r'^\[TITRE\][^\n]*\n?', '', doc.page_content).replace('⏎', '\n')
+            for seq, para in enumerate(re.split(r'\n\s*\n', raw)):
+                cands.append((page_rank[pid], ci, seq, pid, para.strip()))
+        # ORDRE DE LECTURE : par page (pertinence), puis position dans le doc (chunk_index, seq).
+        # Ne réordonne JAMAIS l'intérieur d'une page → le sens/les enchaînements sont préservés.
+        cands.sort(key=lambda t: (t[0], t[1], t[2]))
+        total = len(section)
+        seen_pages = {best_pid}
+        extra: list[str] = []
+        for _rank, _ci, _seq, pid, p in cands:   # PAS de plafond de pages sur le CONTEXTE (complétude)
+            s = _sig(p)
+            if len(s) < 15 or s in kept:
+                continue
+            if total + len(p) > budget:
+                break
+            extra.append(p); kept.add(s); total += len(p) + 2
+            if pid not in seen_pages:
+                seen_pages.add(pid); metas.append(pid_meta[pid])
+        if extra:
+            body = section + "\n\n" + "\n\n".join(extra)
+
+    # [Source: …] : on plafonne l'AFFICHAGE des sources aux 3 pages les plus contributrices
+    # (les 1res de `metas`, par pertinence). Le CONTEXTE, lui, n'est PAS plafonné (complétude).
+    _titles = list(dict.fromkeys(m.get("title", "?") for m in metas))[:3]
+    context = f"[Source: {' | '.join(_titles)}]\n\n{body}"
+    chunk_images = [(body, u) for u in re.findall(r'!\[[^\]]*\]\(([^)]+)\)', body)]
+    print(f"[build_section_context] page={best_pid} '{title[:28]}' → "
+          f"{'PAGE ENTIÈRE' if is_page else 'section (##/###)'} + {len(body)-len(section)} car paras "
+          f"({len(body)} car)", flush=True)
+    return context, chunk_images, metas
+
+
 def is_rejection_response(llm_response: str) -> bool:
     """Vérifie si la réponse LLM est un rejet."""
     rejection_phrases = [
@@ -1441,7 +1685,11 @@ def log_question_features(question: str, best_doc, best_score: float, rank: int,
         pass
 
 
-def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
+def rag_answer_streaming(question: str, roles: list[str] = ["user"], mode: str | None = None):
+    # Mode effectif : override par requête (bouton widget) sinon RAW_MODE du .env.
+    # "raw" → RAW (verbatim, RAW_OLLAMA_MODEL) ; "reformulation" → génératif (OLLAMA_MODEL).
+    _mode_raw = (mode == "raw") if mode in ("raw", "reformulation") \
+        else os.getenv("RAW_MODE", "false").strip().lower() == "true"
     """Générateur de réponse en streaming avec filtrage."""
 
     # --- 1. SALUTATIONS ET HORS-SUJET ÉVIDENT ---
@@ -1551,8 +1799,8 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
         _rag_para_budget = int(os.getenv("RAG_PARA_BUDGET", "0"))
     except ValueError:
         _rag_para_budget = 0
-    # Mode paragraphes → on capture les 3 meilleures pages (le budget limitera le contenu)
-    _pages_capture = max(_rag_pages_n, 3) if _rag_para_budget > 0 else _rag_pages_n
+    # Mode paragraphes → on capture les 5 meilleures pages (le budget limitera le contenu)
+    _pages_capture = max(_rag_pages_n, 5) if _rag_para_budget > 0 else _rag_pages_n
     _preranked_pages: list[str] = []
     if _pages_capture > 1:
         for _d, _s, _ in docs_with_scores:
@@ -1691,7 +1939,7 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
             return
 
     # --- 8b. CONSTRUCTION CONTEXTE ---
-    _raw_mode_ctx = os.getenv("RAW_MODE", "false").strip().lower() == "true"
+    _raw_mode_ctx = _mode_raw
 
     _para_result = None
     # Mode PARAGRAPHES CIBLÉS BORNÉS (RAG_PARA_BUDGET>0) : paragraphes pertinents des
@@ -1699,10 +1947,21 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
     # interne les chunks RÉCUPÉRÉS (tier 0, par score de rerank) → signal + fiable que la
     # proba du classifieur ML (qui se trompe sur les questions ambiguës, ex. civilité).
     if _rag_para_budget > 0:
-        _para_result = build_para_context(
-            docs_with_scores, [str(best_page_id)] + [str(p) for p in _preranked_pages],
-            expanded_question, _rag_para_budget,
-        )
+        if _raw_mode_ctx:
+            # RAW : contexte PARAGRAPHES CIBLÉS BORNÉS (build_para_context), aligné sur la PROD.
+            # La section h2/h3 (build_section_context) a été retirée du RAW : contexte trop
+            # lourd → trop lent sur le serveur CPU. On garde uniquement le prompt renforcé.
+            _para_result = build_para_context(
+                docs_with_scores, [str(best_page_id)] + [str(p) for p in _preranked_pages],
+                expanded_question, _rag_para_budget,
+            )
+        else:
+            # REFORMULATION (modèle capable) : contexte par SECTION (h2) — la section qui
+            # répond, EN ENTIER, sinon la page entière. Budget large (une section tient
+            # largement dans num_ctx 16k+). Fallback build_full_context si section vide.
+            _sec_budget = max(_rag_para_budget, int(os.getenv("RAG_SECTION_BUDGET", "20000")))
+            _para_result = build_section_context(docs_with_scores, _sec_budget, question) \
+                or build_full_context(docs_with_scores, _rag_para_budget, question)
     if _para_result is not None:
         context, chunk_images, page_metadatas = _para_result
     else:
@@ -1734,7 +1993,7 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
     log_question_features(question, best_doc, docs_with_scores[0][1], rank=1, roles=roles)
 
     # --- 9. MODE RAW ou GÉNÉRATION LLM ---
-    _raw_mode = os.getenv("RAW_MODE", "false").strip().lower() == "true"
+    _raw_mode = _mode_raw
 
     injected_urls: set = set()
     llm_response = ""
@@ -1854,6 +2113,30 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
                 yield f"![image]({best_url})\n"
 
     if not is_rejection:
+        # --- Source PRINCIPALE par recouvrement avec la RÉPONSE (post-génération) ---
+        # Le contexte peut venir de PLUSIEURS pages (section + paragraphes d'autres pages).
+        # La vraie source = celle dont le contenu recoupe le plus la réponse générée (noms,
+        # chiffres, termes). Sinon on garde la page de la section (page_metadatas[0]).
+        if llm_response and page_metadatas and len(page_metadatas) > 1:
+            def _sig_words(t: str) -> set:
+                ws = {w for w in _para_words(t) if len(w) >= 4 and w not in _PARA_COMMON}
+                ws |= set(re.findall(r'\d+', t or ""))     # les chiffres comptent (ex. « 12 caractères »)
+                return ws
+            _ans = _sig_words(llm_response)
+            if _ans:
+                _page_txt: dict = {}
+                for _d, _s, *_ in docs_with_scores:
+                    _pid = _d.metadata.get("page_id")
+                    if _pid:
+                        _page_txt[_pid] = _page_txt.get(_pid, "") + " " + _d.page_content
+                _cands = [m for m in page_metadatas if m.get("page_id")]
+                _scored = sorted(
+                    _cands, key=lambda m: len(_ans & _sig_words(_page_txt.get(m["page_id"], ""))),
+                    reverse=True,
+                )
+                if _scored and len(_ans & _sig_words(_page_txt.get(_scored[0]["page_id"], ""))) > 0:
+                    best_metadata = _scored[0]
+                    best_page_id = _scored[0].get("page_id")   # pour que les connexes l'excluent
         # Ancre précise : section du chunk principal la plus proche des mots-clés
         if best_doc.metadata.get("page_id") == best_metadata.get("page_id"):
             picked = _pick_anchor(best_doc.page_content, best_doc.metadata.get("anchors", ""), expanded_question)
@@ -1953,7 +2236,7 @@ def rag_answer_streaming(question: str, roles: list[str] = ["user"]):
 
 
 def build_debug_answer(docs_with_scores: list, expanded_question: str, question: str,
-                       roles: list[str], preranked_pages: list[str]):
+                       roles: list[str], preranked_pages: list[str], mode: str | None = None):
     """Reproduit EXACTEMENT la construction de contexte + réponse de rag_answer_streaming
     (mode RAW + paragraphes ciblés bornés, tel qu'en prod) pour la page debug, mais en NON
     streaming. Renvoie (context_sent, answer, mode) où :
@@ -2009,7 +2292,8 @@ def build_debug_answer(docs_with_scores: list, expanded_question: str, question:
         pass
 
     # --- Construction contexte (paragraphes bornés si RAG_PARA_BUDGET>0, sinon build_context) ---
-    _raw_mode = os.getenv("RAW_MODE", "false").strip().lower() == "true"
+    _raw_mode = (mode == "raw") if mode in ("raw", "reformulation") \
+        else os.getenv("RAW_MODE", "false").strip().lower() == "true"
     try:
         _rag_para_budget = int(os.getenv("RAG_PARA_BUDGET", "0"))
     except ValueError:
@@ -2017,10 +2301,19 @@ def build_debug_answer(docs_with_scores: list, expanded_question: str, question:
 
     _para_result = None
     if _rag_para_budget > 0:
-        _para_result = build_para_context(
-            docs_with_scores, [str(best_page_id)] + [str(p) for p in preranked_pages],
-            expanded_question, _rag_para_budget,
-        )
+        # ALIGNÉ sur rag_answer_streaming : RAW → filtrage serré ; reformulation → contexte
+        # large (+ continuité de chunk + intro définitionnelle). Sinon la page debug montre
+        # un contexte qui n'est PAS celui réellement envoyé au LLM en reformulation.
+        if _raw_mode:
+            # RAW : build_para_context (paragraphes ciblés bornés), aligné sur la PROD.
+            _para_result = build_para_context(
+                docs_with_scores, [str(best_page_id)] + [str(p) for p in preranked_pages],
+                expanded_question, _rag_para_budget,
+            )
+        else:
+            _sec_budget = max(_rag_para_budget, int(os.getenv("RAG_SECTION_BUDGET", "20000")))
+            _para_result = build_section_context(docs_with_scores, _sec_budget, question) \
+                or build_full_context(docs_with_scores, _rag_para_budget, question)
     if _para_result is not None:
         context, _chunk_images, _page_metadatas = _para_result
     else:

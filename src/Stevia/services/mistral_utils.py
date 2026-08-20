@@ -40,7 +40,7 @@ RÈGLES ABSOLUES :
 3. Reformule avec tes propres mots tout en restant fidèle au sens du document. Ne copie pas mot pour mot, sauf pour les noms de champs, boutons et termes techniques.
 4. FORMAT : commence toujours par une courte phrase d'introduction en prose. Utilise une liste à tirets (-) dès que tu énumères 3 éléments distincts ou plus (champs de formulaire, options, étapes). N'utilise JAMAIS de listes imbriquées.
 5. Utilise **gras** pour les noms de champs, boutons et termes techniques importants.
-6. N'invente rien. N'ajoute aucune information absente du document.
+6. N'invente rien. N'ajoute aucune information absente du document. N'assemble JAMAIS une définition, une catégorisation ou une liste de « types » à partir d'éléments qui ne la donnent pas explicitement (noms d'onglets, exemples, titres de section) : n'utilise QUE ce que le document énonce.
 7. FOCUS : si la question porte sur UN SEUL terme spécifique (ex : 'c'est quoi X', 'que signifie X'), réponds en 1 à 2 phrases sur ce terme uniquement, sans énumérer les autres éléments de la même liste. Pour les questions fonctionnelles ('à quoi sert', 'comment fonctionne', 'quelles sont les règles'), couvre TOUS les concepts clés présents dans l'introduction du document (types, règles, conditions importantes).
 8. IMAGES : Lorsque le document contient `![image](url)`, tu DOIS écrire ce markdown EXACTEMENT tel quel dans ta réponse à la position correspondante. NE JAMAIS écrire "l'image ci-dessus", "image 1", "voir image" ou toute autre description à la place. Copie le markdown `![image](url)` avec l'URL intacte."""
 
@@ -52,9 +52,10 @@ LIGNES: les numéros des lignes qui répondent à la question, séparés par des
 
 RÈGLES de sélection des lignes :
 - Si la question porte sur un TERME précis (un champ, un nom, un mot exact — ex. « civilité »), choisis la ligne qui contient CE terme exact, pas une ligne voisine qui parle d'un autre terme.
+- Si la question demande ce QU'EST ou À QUOI SERT un profil, un rôle ou un terme (ex. « à quoi sert SUCRE_CONSULT », « qu'est-ce que X »), choisis la ligne qui le DÉFINIT (souvent au format « NOM : description » ou « X est/permet… »), et NON un titre de section, une image, ou une description d'écran/d'utilisation.
 - Choisis en PRIORITÉ la ou les lignes qui répondent DIRECTEMENT et EXACTEMENT à la question posée (celles qui énoncent la réponse).
 - N'inclus PAS les lignes seulement liées au sujet mais qui ne répondent pas précisément à la question (contexte, étapes voisines, autres fonctionnalités).
-- Vise le MINIMUM de lignes nécessaires : si UNE ligne répond entièrement à la question, ne sélectionne QUE celle-là.
+- Sélectionne TOUTES les lignes qui, ENSEMBLE, répondent PRÉCISÉMENT et COMPLÈTEMENT à la question (pas de nombre fixe : parfois une seule suffit, parfois il en faut plusieurs si la réponse est répartie). Mais UNIQUEMENT celles-là : pas les lignes seulement liées au sujet.
 - EXCEPTION : si la question demande explicitement une liste/énumération, sélectionne alors TOUTES les lignes de cette liste, sans en oublier aucune.
 - IMPORTANT : si AUCUNE ligne ne répond DIRECTEMENT à la question (la réponse devrait être déduite, ou n'est pas dans le document), réponds UNIQUEMENT : LIGNES: AUCUNE (ne sélectionne pas des lignes seulement liées au sujet)."""
 
@@ -122,7 +123,7 @@ def raw_select_lines(numbered_context: str, question: str) -> str:
         "keep_alive": -1,
         "options": {
             "temperature": 0.0,
-            "num_ctx": 6144,
+            "num_ctx": int(os.getenv("RAG_NUM_CTX", "6144")),   # gros contexte (test option 2 RAW)
             "num_predict": 120,
         }
     }

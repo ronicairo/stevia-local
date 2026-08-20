@@ -1,7 +1,8 @@
 # CLAUDE.md — Journal de session Stevia
 
 > Fichier de continuité : résumé de ce qui a été fait à chaque session, pour reprendre le contexte après un `/clear`.
-> Convention : **local** = `src/Stevia/` · **prod RAG** = `STEVIA-PROD/` (RAW + reformulation, conteneur `stevia-container`, port 8001) · **prod LLM direct** = `STEVIA-PROD-LLM/` (mode no-RAG hybride, conteneur `stevia-llm`, image `stevia-llm-python`, port 8002, autonome). Modifs Python en local d'abord, répliquer en prod après validation. Ne jamais toucher `scripts/`, `.env`, ni `synonymes.py` côté prod (version prod plus riche). Les 3 dossiers partagent la même base `postgres_db` + Ollama.
+> Convention : **local** = `src/Stevia/` · **prod RAG** = `STEVIA-PROD/` (RAW + reformulation, conteneur `stevia-container`, port 8001). Modifs Python en local d'abord, répliquer en prod après validation. Ne jamais toucher `scripts/`, `.env`, ni `synonymes.py` côté prod (version prod plus riche). Les 2 dossiers partagent la même base `postgres_db` + Ollama.
+> ⚠️ **Mode LLM direct SUPPRIMÉ le 2026-08-20** (`main_llm.py`, `services/llm_direct.py`, `STEVIA-PROD-LLM/`, réglages `LLM_DIRECT_*`) — plus utilisé. Les mentions « LLM direct / port 8002 / stevia-llm » plus bas sont de l'historique.
 
 ---
 
@@ -325,3 +326,86 @@ Sur `qwen3-embedding:0.6b`, la similarité **question↔question** est faible m�
 - [ ] **Corriger l'ordre de `context_llm_raw` sur le serveur prod** (avant `_merge_action_images`).
 - [ ] Trancher l'archi BBL : backend partagé (via `STEVIA_API_URL`) vs instance dédiée.
 - [ ] Décider si on reprend le sujet « réponse multi-chunk » (définitionnel + réponses réparties) via re-ranking contenu ou envoi de plusieurs chunks.
+
+---
+
+## Session 2026-08-19 — Fixes surligneur, tableaux matrice, NLTK prod, et A/B mesuré reformulation
+
+### Fixes MODE SURLIGNEUR (RAW) — `rag_engine.py` (local + STEVIA-PROD)
+Bug « à quoi sert le profil sucre_consult » renvoyait TOUTE la table des profils. 3 causes dans `_build_raw_answer`/`_extract_relevant_lines` :
+1. `_is_bullet_line` : `**NOM** : …` (gras) commençait par `*` → pris pour une puce → la complétion de liste englobait tout le bloc gras. Fix : `**` n'est pas une puce.
+2. `_is_header` : gardait toute ligne `**…**` comme titre → fallback mots-clés renvoyait tout. Fix : `**label** : valeur` (avec `:`) = donnée, pas titre.
+3. Fallback numéros : lisait « 1. 2. 3. » d'une reformulation en prose comme des n° de lignes. Fix : ne parser que si la réponse est vraiment une liste de numéros.
+A/B mesuré : justesse 65%→70% (le métrique créditait les dumps de table). Non-régression puces OK.
+
+### Tableaux MATRICE (croisés X) — `bookstack_reader.py` (local + STEVIA-PROD)
+`_table_to_markdown` détecte les tableaux matrice (lignes × colonnes de X) → phrases « menu X : accessible par les profils A, B… » + « Le profil Y a accès à : … ». **POSITIVES seules** (les négatives testées puis retirées : elles ne réglaient pas la sélection de page). NÉCESSITE RÉ-INDEXATION. ⚠️ « est-ce que sucre_X a accès à Y » tombe encore sur la page procédure au lieu de la matrice (sélection de page) — chantier recherche.
+
+### NLTK PROD — corpus embarqué (STEVIA-PROD)
+`nltk.download('stopwords')` échoue en prod : **NLTK REFUSE le fetch proxifié** (SSRF/CWE-918), pas le proxy qui bloque. Fix prod : (1) **retirer l'appel `nltk.download`** de `rag_engine.py` + `extract_features.py`, (2) corpus `nltk_data/corpora/stopwords/french` versionné + `COPY nltk_data/ /usr/local/nltk_data/` au Dockerfile. **LOCAL garde `nltk.download`** (natif, pas de proxy). ⚠️ `update` (cache) resert une vieille couche → utiliser `deploy` (--no-cache) après un changement structurel. Voir mémoire [[project_prod_nltk_proxy]].
+
+### A/B MESURÉ — reformulation vs pipeline « serré » (LOCAL)
+Question utilisateur : « on a trop compliqué le RAG ? une recherche vectorielle nue ferait mieux ? » → **mesuré** (harnais + `eval/baseline_nu.py`, 20 Q, qwen2.5:7b) :
+| config | recall@1 | réponse juste |
+|---|---|---|
+| cosinus NU | 80% | 45% |
+| rerank + `build_para_context` serré | 90% | 35% |
+| **rerank + `build_full_context` (large)** | **90%** | **45%** |
+→ **rerank sert (+10 recall@1, gardé)** ; **filtrage contexte serré NUIT au modèle capable (−10, béquille petit modèle)**. Ajout `build_full_context` + branchement `if RAW → para serré else → contexte large`. **RAW inchangé.** Détails + décision : mémoire [[project_test_modele_fort]].
+- **`.env` local EXPÉRIMENTAL** : `RAW_MODE=false` + `OLLAMA_MODEL=qwen2.5:7b`. Revenir prod-aligné = `RAW_MODE=true` + `qwen2.5:3b` + redémarrer.
+- Garde-fou anti-invention ajouté dans `_SYSTEM` (reformulation-only). Insuffisant seul.
+
+### OUVERT
+- **Recall définitionnel** : « c'est quoi X » ne récupère pas le chunk-définition (cosinus faible) → reformulation invente. Chantier recherche (query expansion définitionnelle).
+- Déployer les fixes surligneur + matrice sur le serveur prod (`deploy_stevia.sh` + ré-indexer).
+
+### Suite session 2026-08-19 — fixes récupération, comparaison modèles, matériel
+> Prolonge l'A/B ci-dessus. Toujours LOCAL, mode reformulation, isolé du RAW.
+
+**Fixes récupération (réponse juste 45% → 50%)** — dans `build_full_context` :
+- **Intro définitionnelle** : pour « c'est quoi X », remonter les 3 premiers chunks de la meilleure page en tête (la définition est au DÉBUT de la page mais a un cosinus faible → jamais récupérée). Ciblé via `_DEF_RE` (c'est quoi / qu'est-ce que / définition).
+- **Continuité de chunk** : quand un chunk retenu finit par « : » (intro de liste), inclure le chunk `chunk_index+1` de la même page. Corrige « Il existe deux types : » qui perdait sa liste manuelles/induites (le chunk-définition n'était pas récupéré, cosinus faible). Marche pour TOUTE formulation.
+- Garde-fou anti-invention `_SYSTEM` **retiré** (il collait un « info non trouvée » contradictoire à la fin d'une bonne réponse).
+- **Page debug alignée** : `build_debug_answer` branche `if RAW → build_para_context else → build_full_context` (sinon la page montrait un contexte tronqué ≠ celui envoyé au LLM). + endpoint renvoie `model_used`, badge modèle affiché sur la page.
+
+**Comparaison MODÈLES (Mac M5, un seul GPU unifié)** :
+| Modèle | Vitesse | Constat |
+|---|---|---|
+| `qwen2.5:3b` | rapide | baseline RAW ; rate civilité |
+| **`qwen2.5:7b`** | ~rapide, 100% GPU | **sweet spot** : reformulation concise, règle civilité (12 car.) |
+| `gemma3:4b` | rapide | **invente** en reformulation → écarté |
+| `gemma3:12b` | ~17 tok/s + **56s chargement à froid** | trop lent (timeouts page debug) → écarté/supprimé |
+| `gemma4:12b` | — | mode « thinking » cassé (réponses vides) → supprimé |
+
+**Enseignements** :
+- **La taille du modèle n'est PAS le levier** : le goulot est la **récupération**, pas le modèle. Le 7b aide surtout la **concision**.
+- **12B trop lent** sur ce Mac (un seul GPU unifié). `qwen2.5:7b` = bon compromis (100% GPU, `keep_alive=-1` → reste chargé). Nettoyer des fichiers libère du **disque, pas de la RAM** ; décharger les modèles inutiles (`ollama stop`) libère la RAM.
+- **Reformulation** = concise + règle des cas que le RAW ratait, MAIS **invente si la recherche rate le contexte** → exige une recherche fiable. **RAW** = ne fabrique jamais (sûr prod). Goulot commun = **récupération**.
+- Timeout contrôleur Symfony debug 120s → **300s** (le 12B dépassait ; la page debug attend la réponse ENTIÈRE, pas de streaming).
+
+**Modèles Ollama locaux** : supprimés `gemma4:12b`, `gemma3:4b`, `gemma3:12b`. Restent `qwen2.5:7b` (actif), `qwen2.5:3b` (RAW/ML), `qwen3-embedding:0.6b`. `.env` local final : `RAW_MODE=false` + `OLLAMA_MODEL=qwen2.5:7b`.
+
+**Fichiers touchés (LOCAL)** : `rag_engine.py` (`build_full_context` + intro-prepend + continuité + branchement debug), `mistral_utils.py` (garde-fou retiré), `main.py` (`model_used`), `SteviaController.php` (timeout 300s), `debug-classifieurs.html.twig` (badge modèle), `eval/baseline_nu.py` (neuf).
+
+## Session 2026-08-20 — Contexte par SECTION (reformulation), source post-génération, suppression LLM direct
+
+### Contexte par SECTION + paragraphes (reformulation) — `build_section_context` (LOCAL)
+Évolution du contexte reformulation : build_para_context (serré, 35%) → build_full_context (large, 45-50%) → **build_section_context** :
+- **Section h2/h3** qui contient la réponse (repérée via le meilleur chunk = recouvrement de mots), **sinon page entière** si la page est plate (65/95 pages n'ont AUCUN titre `##`/`###`). Détection `#{2,}` = h2 OU h3 (la + fine).
+- **+ paragraphes des meilleurs chunks RÉCUPÉRÉS** (toutes pages) → robustesse : la réponse peut être dans une AUTRE section (ex. l'intro « à minima deux étapes »). **Ordre de LECTURE** (page/pertinence puis `chunk_index` — jamais réordonné dans une page → sens préservé, cf. décision utilisateur). **Dédup** par signature. **Contexte NON plafonné en pages** (complétude, budget `RAG_SECTION_BUDGET=20000` seul), `RAG_NUM_CTX=16384`. ⚠️ le **plafond 3 pages est sur l'AFFICHAGE des sources** (`[Source:]` + connexes), pas sur le contexte.
+- **RAW** : section-only si la page a des titres (sinon `build_para_context`), **pas d'extras** (le 3b se noie sur un gros contexte). `page_fallback=False` → rend None si page plate.
+- **`[Source:]` liste les 3 pages** contributrices (pas seulement la 1re).
+- La **page debug** (`build_debug_answer`) est alignée sur ces chemins → montre le vrai contexte + badge `model_used`.
+
+### Source PRINCIPALE post-génération
+Le contexte étant multi-pages, la source principale = la page dont le contenu **recoupe le plus la RÉPONSE générée** (mots + chiffres), calculée **après** génération ; les autres → connexes. Fallback = page de la section.
+
+### ÉVALUATION — le marqueur est CASSÉ pour la reformulation
+Éval marqueur = 40 % MAIS **jugement humain = 19/20 = 95 %**. Le marqueur exact ne marche que pour le **verbatim (RAW)** ; en reformulation le modèle **paraphrase** (« à minima »→« au minimum ») → faux négatifs massifs. **Point mémoire** : *verbatim = mesurable au marqueur ; génératif = éval sémantique (jugement humain ou LLM-juge)*. (Seule Q2 réellement incomplète : « induites » + « créances non soldées » dropés par le résumé du 7b.)
+
+### Mode LLM DIRECT SUPPRIMÉ
+`main_llm.py`, `services/llm_direct.py`, `STEVIA-PROD-LLM/`, réglages `LLM_DIRECT_*` retirés (plus utilisé). README-MODES réécrit en **2 modes** (RAW + Reformulation). Modèles Ollama nettoyés : supprimés gemma4:12b (thinking cassé), gemma3:12b (trop lent : ~17 tok/s + 56s à froid sur Mac 1 GPU), gemma3:4b (invente). Restent `qwen2.5:7b` (reformulation, actif), `qwen2.5:3b` (RAW/ML), `qwen3-embedding:0.6b`.
+
+### Divers
+- Timeout contrôleur Symfony debug 120s → 300s. `.env` local : `RAW_MODE=false`, `OLLAMA_MODEL=qwen2.5:7b`.
+- Détails + tableau A/B : mémoire [[project_test_modele_fort]].

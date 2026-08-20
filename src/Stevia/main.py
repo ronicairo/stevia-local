@@ -84,6 +84,7 @@ app.add_middleware(
 class QueryModel(BaseModel):
     question: str
     roles: list[str] = ["user"]
+    mode: str | None = None   # "raw" | "reformulation" | None (=> RAW_MODE du .env). Override par requête (bouton widget).
 
 class FeedbackModel(BaseModel):
     message_id: str = ""
@@ -186,7 +187,7 @@ def startup():
 async def ask_stream(payload: QueryModel, request: Request):
     async def event_generator():
         try:
-            for chunk in rag_answer_streaming(payload.question, roles=payload.roles):
+            for chunk in rag_answer_streaming(payload.question, roles=payload.roles, mode=payload.mode):
                 if await request.is_disconnected():
                     break
                 yield json.dumps({"content": chunk}) + "\n"
@@ -922,8 +923,17 @@ async def debug_pipeline(payload: QueryModel):
     answer_mode = None
     if docs_with_scores:
         context_sent, llm_response, answer_mode = build_debug_answer(
-            docs_with_scores, expanded, question, roles, preranked_pages
+            docs_with_scores, expanded, question, roles, preranked_pages, mode=payload.mode
         )
+
+    # Modèle réellement utilisé pour générer la réponse (dépend du mode) :
+    # RAW → RAW_OLLAMA_MODEL (fallback OLLAMA_MODEL) ; reformulation → OLLAMA_MODEL.
+    if answer_mode == "raw":
+        model_used = _os.getenv("RAW_OLLAMA_MODEL") or _os.getenv("OLLAMA_MODEL")
+    elif answer_mode == "reformulation":
+        model_used = _os.getenv("OLLAMA_MODEL")
+    else:
+        model_used = None
 
     return {
         "question": question,
@@ -934,6 +944,7 @@ async def debug_pipeline(payload: QueryModel):
         "context_sent": context_sent,
         "llm_response": llm_response,
         "answer_mode": answer_mode,
+        "model_used": model_used,
     }
 
 

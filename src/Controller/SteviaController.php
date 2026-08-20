@@ -61,6 +61,7 @@ class SteviaController extends AbstractController
                             'json' => [
                                 'question' => $payload['question'],
                                 'roles'    => $roles,
+                                'mode'     => $payload['mode'] ?? null,   // "raw"|"reformulation"|null (bouton widget)
                             ],
                             'timeout' => 100,
                             'buffer'  => false,
@@ -452,8 +453,8 @@ class SteviaController extends AbstractController
 
         try {
             $response = $this->client->request('POST', $this->apiStevia . '/debug/pipeline', [
-                'json'    => ['question' => $question, 'roles' => $this->getSteviaRoles()],
-                'timeout' => 120,
+                'json'    => ['question' => $question, 'roles' => $this->getSteviaRoles(), 'mode' => $data['mode'] ?? null],
+                'timeout' => 300,   // gemma3:12b (12B) génère la réponse entière côté serveur → lent (chargement à froid + génération)
             ]);
             return $this->json($response->toArray(false));
         } catch (Exception $e) {

@@ -200,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 credentials: 'same-origin',
                 signal: abortController.signal,
-                body: JSON.stringify({ question, roles: [window.STEVIA_ROLE || 'user'] })
+                body: JSON.stringify({ question, roles: [window.STEVIA_ROLE || 'user'], mode: (document.getElementById('stevia-mode') || {}).value || null })
             });
 
             if (!response.ok) {

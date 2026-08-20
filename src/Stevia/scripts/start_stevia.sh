@@ -130,6 +130,22 @@ pip install -q -r requirements.txt
 echo -e "${G}✅ Dépendances OK${N}"
 
 # ================================================================
+#  VÉRIFICATION DU PORT 8001
+#  - déjà occupé ET répond  → Stevia tourne bien, on ne touche à rien
+#  - occupé MAIS ne répond plus (uvicorn fantôme figé) → on le tue et on relance
+# ================================================================
+if lsof -tiTCP:8001 -sTCP:LISTEN >/dev/null 2>&1; then
+    if curl -sf --max-time 3 http://127.0.0.1:8001/health >/dev/null 2>&1; then
+        echo ""
+        echo -e "${G}✅ Stevia est déjà démarrée et fonctionnelle sur le port 8001 — rien à faire.${N}"
+        exit 0
+    fi
+    echo -e "${Y}⚠️  Port 8001 occupé par un process qui ne répond plus — nettoyage...${N}"
+    lsof -tiTCP:8001 -sTCP:LISTEN | xargs kill -9 2>/dev/null
+    sleep 1
+fi
+
+# ================================================================
 #  LANCEMENT FASTAPI
 # ================================================================
 echo ""

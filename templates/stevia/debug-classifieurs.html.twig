@@ -120,6 +120,7 @@
     <div class="sucre-card mt-4" id="bloc-response">
         <div class="sucre-card-header">
             <i class="bi bi-chat-left-text me-2"></i><span id="response-header">Réponse générée</span>
+            <span id="response-model-badge" class="badge bg-info ms-2" style="display:none"></span>
         </div>
         <div class="sucre-card-body">
             <div id="llm-response" class="small"></div>
@@ -177,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const resp = await fetch('{{ path('stevia_debug_classifieurs_run') }}', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question }),
+                body: JSON.stringify({ question, mode: (document.getElementById('stevia-mode') || {}).value || null }),
             });
             const data = await resp.json();
 
@@ -296,6 +297,15 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             modeBadge.style.display = 'none';
             respHeader.textContent = 'Réponse générée';
+        }
+
+        // Modèle réellement utilisé pour cette question (dépend du mode)
+        const modelBadge = document.getElementById('response-model-badge');
+        if (data.model_used) {
+            modelBadge.innerHTML = '<i class="bi bi-cpu me-1"></i>modèle : ' + data.model_used;
+            modelBadge.style.display = '';
+        } else {
+            modelBadge.style.display = 'none';
         }
     }
 
