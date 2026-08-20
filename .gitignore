@@ -30,3 +30,7 @@ MEMOIRE-STEVIA/
 DOC-BOOKSTACK-HTML/
 stevia.sql
 src/Controller/SteviaController.php
+
+# macOS
+.DS_Store
+**/.DS_Store
